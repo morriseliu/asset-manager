@@ -1,5 +1,6 @@
 // 全能资产管家 service worker: app shell cache-first, price/rate APIs network-only.
-const CACHE = 'asset-manager-v3';
+const PREFIX = 'asset-manager-';
+const CACHE = PREFIX + 'v4';
 const CHART_JS = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js';
 const SHELL = [
   './',
@@ -24,7 +25,7 @@ self.addEventListener('install', event => {
 self.addEventListener('activate', event => {
   event.waitUntil((async () => {
     const keys = await caches.keys();
-    await Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)));
+    await Promise.all(keys.filter(k => k.startsWith(PREFIX) && k !== CACHE).map(k => caches.delete(k)));
     await self.clients.claim();
   })());
 });
