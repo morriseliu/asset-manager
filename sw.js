@@ -1,10 +1,11 @@
 // 全能资产管家 service worker: app shell cache-first, price/rate APIs network-only.
 const PREFIX = 'asset-manager-';
-const CACHE = PREFIX + 'v5';
+const CACHE = PREFIX + 'v6';
 const CHART_JS = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js';
 const SHELL = [
   './',
   './index.html',
+  './quick.html',
   './sync.js',
   './quick.js',
   './manifest.webmanifest',
@@ -39,14 +40,15 @@ self.addEventListener('fetch', event => {
   // Same-origin app shell: network-first for pages (so updates show up), cache fallback offline.
   if (url.origin === self.location.origin) {
     if (req.mode === 'navigate') {
+      // 每个页面各自缓存（记一笔页 quick.html 不能覆盖主页面的缓存）
+      const page = /\/quick\.html$/.test(url.pathname) ? './quick.html' : './index.html';
       event.respondWith((async () => {
         try {
           const res = await fetch(req);
-          const cache = await caches.open(CACHE);
-          cache.put('./index.html', res.clone());
+          if (res.ok) (await caches.open(CACHE)).put(page, res.clone());
           return res;
         } catch (e) {
-          return (await caches.match('./index.html')) || (await caches.match('./'));
+          return (await caches.match(page)) || (await caches.match('./index.html')) || (await caches.match('./'));
         }
       })());
       return;

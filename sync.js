@@ -261,7 +261,8 @@
   // ---------- hook app save() ----------
   if (typeof window.save === 'function') {
     var appSave = window.save;
-    window.save = function () { var r = appSave.apply(this, arguments); try { if (markLocalChange()) schedulePush(); } catch (e) {} return r; };
+    // 已从云端下载、等待刷新时，忽略页面里还在跑的 save()（例如汇率刷新完成后的 save），否则会用旧的内存数据覆盖刚下载的数据
+    window.save = function () { if (reloading) return; var r = appSave.apply(this, arguments); try { if (markLocalChange()) schedulePush(); } catch (e) {} return r; };
   }
 
   // ---------- UI ----------

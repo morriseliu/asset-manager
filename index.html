@@ -308,15 +308,21 @@
   <!-- 设置 -->
   <div id="p-settings" style="display:none">
     <div class="card" id="quickCard">
-      <div class="card-t">快捷记账（不打开 App 也能记）</div>
-      <p class="hint" style="margin-bottom:6px">付完款后，在 iPhone 上轻点背面两下或点小组件，输入金额、选分类就记好了。记录先存进你的私密 Gist，下次打开本页或同步时自动导入账本。</p>
+      <div class="card-t">快捷记账（付完款敲两下手机背面）</div>
+      <p class="hint" style="margin-bottom:6px">打开下面的「记一笔」页面：按金额、点分类就记好了，自动同步到账本。</p>
       <div class="item qa-kv"><span>默认账户</span><select class="form-c" id="qaAcc" style="width:auto;max-width:60%;padding:6px 30px 6px 10px;font-size:15px" onchange="setQuickAcc(this.value)"></select></div>
-      <div class="item qa-kv"><span>Gist ID</span><span><code id="qaGist">--</code> <button class="btn-sm" onclick="copyQA('qaGist')">复制</button></span></div>
-      <div class="item"><div class="qa-kv"><span>分类（快捷指令菜单用）</span><button class="btn-sm" onclick="copyQA('qaCats')">复制</button></div><code class="qa-code" id="qaCats"></code></div>
-      <div class="item"><details class="qa"><summary>iPhone 快捷指令设置步骤</summary><div id="qaSteps"></div>
-        <button class="btn-sm" style="margin:8px 0 6px" onclick="copyQA('qaSteps')">复制全部步骤</button></details></div>
-      <div class="item"><details class="qa"><summary>备用：网址快捷记账</summary>
-        <p class="hint">打开下面这种网址会立刻记一笔（不需要同步），可做成主屏书签或快捷指令里的「打开网址」：</p>
+      <div class="item"><div class="qa-kv"><span>记一笔页面链接</span><button class="btn-sm" onclick="copyQA('qaLink')">复制</button></div><code class="qa-code" id="qaLink"></code></div>
+      <div class="item">
+        <ol class="qa-steps">
+          <li>打开「快捷指令」App → 右上角 ＋ → 添加操作「打开 URL」→ 粘贴上面的链接 → 完成。</li>
+          <li>设置 → 辅助功能 → 触控 → 轻点背面 → 轻点两下 → 选刚才的快捷指令。</li>
+          <li>（可选）快捷指令 → 自动化 → ＋ → 钱包 → 选卡片 →「立即运行」→ 打开 URL（同一个链接）。用 Apple Pay 付完自动弹出。</li>
+        </ol>
+        <p class="hint" style="margin-top:6px">也可以用 Safari 打开链接 → 分享 →「添加到主屏幕」，点图标就能记。</p>
+        <p class="hint" style="margin-top:6px" id="qaSyncHint">快捷指令会在 Safari 里打开这个页面。如果你平时用主屏幕上的 App，第一次打开时页面会提示粘贴「多设备同步」的令牌，填一次即可，之后 Safari 里记的账会自动同步到 App。</p>
+      </div>
+      <div class="item"><details class="qa"><summary>备用：网址直接记账</summary>
+        <p class="hint">打开下面这种网址会立刻记一笔（不需要同步），可做成书签：</p>
         <code class="qa-code" id="qaUrl"></code></details></div>
     </div>
     <div class="card">
@@ -1218,38 +1224,17 @@ window.AMQuickApply=function(entries){
   return added;
 };
 function setQuickAcc(id){ S.quickAccId=id||''; save(); }
-function quickSteps(gid){
-  const G=gid||'（你的 Gist ID，见上方）';
-  return [
-    '准备令牌：打开 github.com/settings/tokens/new?scopes=gist ，只勾选 gist，有效期选 No expiration，生成后复制 ghp_ 开头的令牌（可用和「多设备同步」同一个）。',
-    '打开「快捷指令」App，点右上角＋新建，命名「记一笔」。',
-    '添加「要求输入」：输入类型选「数字」，提示写「金额」。',
-    '添加「列表」：每行填一个分类（复制上面的分类列表）；再添加「从列表中选取」。',
-    '（可选）添加「要求输入」：类型「文本」，提示写「备注」。',
-    '添加「文本」，内容分三行：第1行插入变量「提供的输入」（金额），第2行插入「所选项目」，第3行插入备注那一步的「提供的输入」（没有备注就只写两行）。收入在金额前加 +，或分类选「工资」等收入分类。',
-    '添加「获取 URL 的内容」：URL 填 https://api.github.com/gists/'+G+' ；点「显示更多」，方法选 PATCH；头部添加 Authorization，值填 Bearer 加一个空格再加你的令牌；请求体选 JSON。',
-    '在请求体里添加字段，类型「词典」，键填 files；在这个词典里再添加一个「词典」字段，键填 quick_ 然后插入变量「当前日期」再接 .txt（点日期变量 → 日期格式选「自定」，填 yyyyMMdd-HHmmss-SSS）；在最里层词典添加「文本」字段，键填 content，值插入上一步的「文本」。',
-    '添加「显示通知」，内容写：已记账 ¥ 并插入金额变量。点「完成」，先手动运行一次，回到本页同步后应看到「已导入 1 笔快捷记账」。',
-    '轻点背面触发：设置 → 辅助功能 → 触控 → 轻点背面 → 轻点两下 → 选「记一笔」。',
-    '小组件：长按桌面或锁屏 → 添加小组件 → 快捷指令 → 选「记一笔」。',
-    'Apple Pay 付款后自动记：快捷指令 → 自动化 → ＋ → 「交易」，选卡片，勾选「立即运行」，新建空白快捷指令：把第3步换成「快捷指令输入」的「金额」，备注改用「商家」，其余同上。（国内部分银行卡可能不支持「交易」触发。）'
-  ];
-}
+function quickLink(){ return location.origin+location.pathname.replace(/[^/]*$/,'')+'quick.html'; }
 function renderQuick(){
   const sel=document.getElementById('qaAcc'); if(!sel) return;
   const accs=S.accounts.filter(a=>a.type!=='invest');
   const cur=(AMQuick.pickAccount(S,'')||{}).id||'';
   sel.innerHTML=accs.map(a=>`<option value="${a.id}" ${a.id===cur?'selected':''}>${esc(a.name)}</option>`).join('')||'<option value="">请先添加账户</option>';
-  const gid=localStorage.getItem('am_sync_gist_id')||'';
-  document.getElementById('qaGist').textContent=gid||'先在上方开启多设备同步';
-  document.getElementById('qaCats').textContent=AMQuick.CATS.concat(AMQuick.INCOME_CATS).join('  ');
-  document.getElementById('qaSteps').innerHTML='<ol class="qa-steps">'+quickSteps(gid).map(x=>`<li>${esc(x)}</li>`).join('')+'</ol>';
+  document.getElementById('qaLink').textContent=quickLink();
   document.getElementById('qaUrl').textContent=location.origin+location.pathname+'?add=1&amt=38&cat='+encodeURIComponent('餐饮')+'&note='+encodeURIComponent('午饭');
 }
 function copyQA(id){
-  const el=document.getElementById(id); let t=el.innerText;
-  if(id==='qaCats') t=AMQuick.CATS.concat(AMQuick.INCOME_CATS).join('\n');
-  if(id==='qaSteps') t=quickSteps(localStorage.getItem('am_sync_gist_id')||'').map((x,i)=>(i+1)+'. '+x).join('\n');
+  const t=id==='qaLink'?quickLink():document.getElementById(id).innerText;
   (navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(()=>toast('已复制'),()=>toast('复制失败，请长按选择文字'));
 }
 // 网址快捷记账：index.html?add=1&amt=38&cat=餐饮&note=午饭[&type=income][&acc=支付宝][&id=唯一编号]
@@ -1293,6 +1278,7 @@ if(!S.accounts.some(a=>a.type==='invest'||a.name==='投资账户')){
 }
 document.getElementById('ledDate').value=today();
 renderAll();
+if(location.hash==='#settings') switchTab('settings');
 fetchRates().then(()=>save());
 </script>
 <script src="sync.js"></script>
