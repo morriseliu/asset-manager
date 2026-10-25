@@ -2,8 +2,9 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <meta name="theme-color" content="#0f766e" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)" />
+  <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-title" content="资产管家" />
@@ -14,109 +15,161 @@
   <title>全能资产管家</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <style>
-    :root {
-      --primary:#0f766e; --bg:#f0fdfa; --card:#fff; --text:#134e4a;
-      --danger:#ef4444; --success:#10b981; --warning:#f59e0b; --muted:#64748b;
-      --shadow:0 4px 16px rgba(15,118,110,.08); --radius:14px;
+    :root{
+      color-scheme:light dark;
+      --accent:#0b7a5f; --accent-soft:rgba(11,122,95,.10);
+      --primary:var(--accent);
+      --bg:#f2f2f7; --card:#ffffff; --card2:#f7f7fa; --fill:rgba(118,118,128,.12);
+      --text:#111114; --text2:#3c3c43; --muted:#8a8a8e; --sep:rgba(60,60,67,.18);
+      --danger:#d4372c; --success:#1f8a4c; --warning:#b7791f;
+      --up:#d4372c; --down:#1f8a4c;
+      --radius:12px; --ease:cubic-bezier(.32,.72,0,1);
+      --tabbar:56px; --sb:env(safe-area-inset-bottom,0px);
     }
-    *{box-sizing:border-box;margin:0;padding:0}
-    body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);min-height:100vh;padding-bottom:72px;line-height:1.45}
-    .container{max-width:680px;margin:0 auto;padding:12px}
-    header{background:linear-gradient(135deg,#0f766e,#0d9488);color:#fff;padding:16px 14px 14px;border-radius:0 0 20px 20px;margin:-12px -12px 12px;box-shadow:var(--shadow)}
-    header h1{font-size:1.15rem;font-weight:700}
-    .sum-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
-    .sum-card{background:rgba(255,255,255,.15);border-radius:12px;padding:10px 12px}
-    .sum-card.full{grid-column:1/-1}
-    .sum-l{font-size:.68rem;opacity:.9}
-    .sum-v{font-size:1.2rem;font-weight:800;margin-top:2px}
-    .sum-v.sm{font-size:1rem}
-    .up{color:#fecaca}.down{color:#bbf7d0}.neu{color:#e2e8f0}
+    @media (prefers-color-scheme:dark){
+      :root{
+        --accent:#3ccf9e; --accent-soft:rgba(60,207,158,.14);
+        --bg:#000000; --card:#1c1c1e; --card2:#2c2c2e; --fill:rgba(118,118,128,.24);
+        --text:#f5f5f7; --text2:#d1d1d6; --muted:#8d8d93; --sep:rgba(84,84,88,.6);
+        --danger:#ff5f52; --success:#3fcf7a; --warning:#e3a43a; --up:#ff5f52; --down:#3fcf7a;
+      }
+    }
+    *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+    html{-webkit-text-size-adjust:100%}
+    body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);min-height:100vh;
+      padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) calc(var(--tabbar) + var(--sb) + 24px) env(safe-area-inset-left,0px);line-height:1.4;font-size:15px;letter-spacing:-.01em}
+    .num,.sum-v,.item-v,.item-pnl,.stat-b .v,.cal-d{font-variant-numeric:tabular-nums;font-feature-settings:"tnum"}
+    .container{max-width:640px;margin:0 auto;padding:0 16px}
+    svg.i{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}
 
-    .tabs{display:flex;background:var(--card);border-radius:12px;padding:3px;margin-bottom:10px;box-shadow:var(--shadow);position:sticky;top:4px;z-index:20;overflow-x:auto;gap:2px}
-    .tab{flex:1;min-width:52px;text-align:center;padding:8px 3px;font-size:.72rem;font-weight:600;border-radius:9px;border:none;background:transparent;color:var(--muted);cursor:pointer;white-space:nowrap}
-    .tab.active{background:var(--primary);color:#fff}
+    /* 顶部：大标题 + 净资产 */
+    header{padding:18px 4px 6px}
+    header h1{font-size:13px;font-weight:600;color:var(--muted);letter-spacing:.02em;display:flex;align-items:center;gap:6px}
+    header h1 .dot{width:8px;height:8px;border-radius:2px;background:var(--accent)}
+    .sum-grid{display:grid;grid-template-columns:1fr 1fr;margin-top:6px;column-gap:16px}
+    .sum-card{padding:10px 0;border-top:.5px solid var(--sep)}
+    .sum-card.full{grid-column:1/-1;border-top:none;padding:0 0 14px}
+    .sum-card.full .sum-l{font-size:13px}
+    .sum-l{font-size:12px;color:var(--muted)}
+    .sum-v{font-size:17px;font-weight:600;margin-top:1px;color:var(--text)}
+    .sum-card.full .sum-v{font-size:40px;font-weight:700;letter-spacing:-.03em;line-height:1.1;margin-top:2px}
+    .sum-v.sm{font-size:17px}
+    .up{color:var(--up)}.down{color:var(--down)}.neu{color:var(--muted);font-weight:500;font-size:15px!important}
 
-    .card{background:var(--card);border-radius:var(--radius);padding:12px;margin-bottom:10px;box-shadow:var(--shadow)}
-    .card-t{font-size:.88rem;font-weight:700;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap}
+    /* 底部标签栏 */
+    .tabs{position:fixed;left:0;right:0;bottom:0;z-index:60;display:flex;justify-content:space-around;padding:6px max(6px,env(safe-area-inset-right)) calc(4px + var(--sb)) max(6px,env(safe-area-inset-left));
+      background:color-mix(in srgb,var(--card) 88%,transparent);-webkit-backdrop-filter:saturate(180%) blur(20px);backdrop-filter:saturate(180%) blur(20px);border-top:.5px solid var(--sep)}
+    .tab{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:2px;padding:2px 0;font-size:10px;font-weight:500;border:none;background:none;color:var(--muted);cursor:pointer;font-family:inherit;transition:color .2s}
+    .tab svg.i{width:24px;height:24px;stroke-width:1.6}
+    .tab.active{color:var(--accent)}
+    .tab:active{opacity:.6}
 
-    .item{padding:10px 0;border-bottom:1px solid #f1f5f9}
-    .item:last-child{border-bottom:none}
-    .item-top{display:flex;justify-content:space-between;gap:8px}
-    .item-name{font-weight:700;font-size:.9rem}
-    .item-meta{font-size:.68rem;color:#94a3b8;margin-top:2px}
+    /* 分组列表（iOS 设置风格） */
+    .card{background:var(--card);border-radius:var(--radius);padding:0 16px;margin-bottom:22px;overflow:hidden}
+    .card-t{font-size:15px;font-weight:600;color:var(--text);padding:13px 0 7px;display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap}
+    .card-t + .item::before,.card-t + div > .item:first-child::before{display:none}
+
+    .item{padding:11px 0;position:relative}
+    .item + .item::before{content:"";position:absolute;left:0;right:-16px;top:0;border-top:.5px solid var(--sep)}
+    .item-top{display:flex;justify-content:space-between;align-items:center;gap:10px}
+    .item-name{font-weight:500;font-size:16px;color:var(--text)}
+    .item-meta{font-size:12.5px;color:var(--muted);margin-top:2px}
     .item-r{text-align:right;flex-shrink:0}
-    .item-v{font-weight:700;font-size:.92rem}
-    .item-pnl{font-size:.74rem;font-weight:600}
-    .item-pnl.up{color:var(--danger)}.item-pnl.down{color:var(--success)}
-    .badge{display:inline-block;padding:1px 6px;border-radius:5px;font-size:.6rem;font-weight:600;background:#f1f5f9;color:var(--muted)}
-    .badge.stock{background:#dbeafe;color:#1d4ed8}
-    .badge.fund{background:#fce7f3;color:#be185d}
-    .badge.crypto{background:#fef3c7;color:#b45309}
-    .badge.cash{background:#d1fae5;color:#047857}
-    .badge.debt{background:#fee2e2;color:#b91c1c}
-    .badge.bank{background:#e0e7ff;color:#4338ca}
-    .badge.alipay{background:#cffafe;color:#0e7490}
-    .badge.wechat{background:#dcfce7;color:#15803d}
+    .item-v{font-weight:600;font-size:16px}
+    .item-pnl{font-size:13px;font-weight:500}
+    .item-pnl.up{color:var(--up)}.item-pnl.down{color:var(--down)}
+    .badge{display:inline-block;padding:0;font-size:12px;font-weight:500;background:none;color:var(--text2);margin-right:2px}
+    .badge::after{content:" ·";color:var(--muted)}
+    .badge:last-child::after{content:""}
+    .badge.debt{color:var(--danger)}
 
-    .btn-row{display:flex;gap:5px;margin-top:5px;flex-wrap:wrap}
-    .btn-sm{font-size:.66rem;padding:3px 8px;border-radius:7px;border:1px solid #e2e8f0;background:#f8fafc;cursor:pointer;color:var(--muted)}
-    .btn-sm.pri{background:#ecfdf5;color:var(--primary);border-color:#a7f3d0}
-    .btn-sm.dan{color:var(--danger);border-color:#fecaca}
-    .btn-sm.warn{background:#fffbeb;color:#b45309;border-color:#fde68a}
+    .btn-row{display:flex;gap:16px;margin-top:6px;flex-wrap:wrap}
+    .btn-sm{font:inherit;font-size:13px;padding:0;border:none;background:none;cursor:pointer;color:var(--accent);font-weight:500}
+    .btn-sm:active{opacity:.5}
+    .btn-sm.pri{color:var(--accent)}
+    .btn-sm.dan{color:var(--danger)}
+    .btn-sm.warn{color:var(--warning)}
+    .btn-sm:disabled{color:var(--muted)}
+    .card-t .btn-sm{font-size:13px}
+    .card-t .btn-sm + .btn-sm{margin-left:14px}
 
-    .form-g{margin-bottom:11px}
-    .form-g label{display:block;font-size:.74rem;font-weight:600;margin-bottom:4px;color:#475569}
-    .form-c{width:100%;padding:9px 11px;border:1.5px solid #e2e8f0;border-radius:10px;font-size:.9rem;background:#f8fafc}
-    .form-c:focus{outline:none;border-color:var(--primary);background:#fff;box-shadow:0 0 0 3px rgba(15,118,110,.1)}
-    select.form-c{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%2364748b' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10l-5 5z'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 11px center;padding-right:30px}
-    .form-r{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    .form-g{margin-bottom:12px}
+    .form-g label{display:block;font-size:12.5px;font-weight:500;margin-bottom:5px;color:var(--muted)}
+    .form-c{width:100%;padding:11px 12px;border:none;border-radius:10px;font:inherit;font-size:16px;background:var(--fill);color:var(--text);transition:box-shadow .15s}
+    .form-c:focus{outline:none;box-shadow:0 0 0 2px var(--accent)}
+    select.form-c{appearance:none;-webkit-appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none' stroke='%238a8a8e' stroke-width='1.6' stroke-linecap='round'%3E%3Cpath d='M3 4.5l3 3 3-3'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;padding-right:32px}
+    .form-r{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    #p-record form{padding:12px 0 14px}
 
-    .btn{display:inline-flex;align-items:center;justify-content:center;gap:5px;padding:10px 14px;border-radius:10px;font-weight:600;font-size:.86rem;border:none;cursor:pointer}
-    .btn-p{background:var(--primary);color:#fff;width:100%;box-shadow:0 3px 10px rgba(15,118,110,.25)}
-    .btn-p:disabled{opacity:.55}
-    .btn-o{background:#fff;border:1.5px solid var(--primary);color:var(--primary)}
+    .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:12px 16px;border-radius:12px;font:inherit;font-weight:600;font-size:16px;border:none;cursor:pointer;transition:transform .15s var(--ease),opacity .15s}
+    .btn:active{transform:scale(.98);opacity:.85}
+    .btn-p{background:var(--accent);color:#fff;width:100%}
+    @media (prefers-color-scheme:dark){.btn-p{color:#00110b}}
+    .btn-p:disabled{opacity:.5}
+    .btn-o{background:var(--card);color:var(--accent)}
+    .btn svg.i{width:18px;height:18px}
 
-    .empty{text-align:center;padding:28px 12px;color:#94a3b8;font-size:.85rem}
-    .fab{position:fixed;bottom:18px;right:14px;width:50px;height:50px;border-radius:50%;background:var(--primary);color:#fff;border:none;font-size:1.4rem;box-shadow:0 5px 18px rgba(15,118,110,.4);cursor:pointer;z-index:50;display:flex;align-items:center;justify-content:center}
-    .toast{position:fixed;top:14px;left:50%;transform:translateX(-50%) translateY(-110px);background:#1e293b;color:#fff;padding:9px 14px;border-radius:10px;font-size:.8rem;z-index:200;transition:transform .3s;max-width:92%;text-align:center;white-space:pre-line}
-    .toast.show{transform:translateX(-50%) translateY(0)}
-    .hint{font-size:.68rem;color:#94a3b8;line-height:1.4}
-    .toolbar{display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap}
-    .toolbar input,.toolbar select{padding:6px 9px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:.76rem;background:#fff}
+    .empty{text-align:center;padding:26px 8px;color:var(--muted);font-size:14px}
+    .fab{position:fixed;bottom:calc(var(--tabbar) + var(--sb) + 14px);right:max(16px,env(safe-area-inset-right));width:52px;height:52px;border-radius:26px;background:var(--accent);color:#fff;border:none;cursor:pointer;z-index:50;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,.18);transition:transform .2s var(--ease)}
+    @media (prefers-color-scheme:dark){.fab{color:#00110b}}
+    .fab:active{transform:scale(.92)}
+    .fab svg.i{width:24px;height:24px;stroke-width:2}
+    .toast{position:fixed;top:calc(env(safe-area-inset-top,0px) + 10px);left:50%;transform:translate(-50%,-140%);background:color-mix(in srgb,var(--text) 92%,transparent);color:var(--bg);padding:10px 16px;border-radius:20px;font-size:14px;font-weight:500;z-index:200;transition:transform .35s var(--ease),opacity .35s;opacity:0;max-width:90%;text-align:center;white-space:pre-line}
+    .toast.show{transform:translate(-50%,0);opacity:1}
+    .hint{font-size:12.5px;color:var(--muted);line-height:1.5}
+    .toolbar{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+    .toolbar input,.toolbar select{padding:8px 12px;border:none;border-radius:10px;font:inherit;font-size:15px;background:var(--fill);color:var(--text)}
     .toolbar input{flex:1;min-width:90px}
-    .refresh-bar{display:flex;gap:6px;margin-bottom:8px}
-    .refresh-bar .btn{flex:1;padding:9px;font-size:.78rem}
-    .stat-g{display:grid;grid-template-columns:1fr 1fr;gap:7px}
-    .stat-b{background:#f8fafc;border-radius:10px;padding:9px 11px}
-    .stat-b .l{font-size:.66rem;color:var(--muted)}
-    .stat-b .v{font-size:.92rem;font-weight:700;margin-top:2px}
-    .stat-b .v.up{color:var(--danger)}.stat-b .v.down{color:var(--success)}
-    .chart-w{position:relative;height:180px}
-    .weight-bar{height:3px;background:#e2e8f0;border-radius:2px;margin-top:3px;overflow:hidden}
-    .weight-bar>div{height:100%;background:var(--primary)}
-    .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;text-align:center}
-    .cal-h{font-size:.65rem;color:var(--muted);padding:4px 0}
-    .cal-d{padding:6px 2px;border-radius:8px;font-size:.72rem;cursor:pointer;background:#f8fafc}
-    .cal-d.has{font-weight:700}
-    .cal-d.up{background:#fef2f2;color:var(--danger)}
-    .cal-d.down{background:#ecfdf5;color:var(--success)}
-    .cal-d.sel{outline:2px solid var(--primary)}
+    .refresh-bar{display:flex;gap:10px;margin:4px 0 6px}
+    .refresh-bar .btn{flex:1;padding:10px;font-size:15px}
+    .refresh-bar .btn-p{background:var(--accent-soft);color:var(--accent)}
+    .stat-g{display:grid;grid-template-columns:1fr 1fr;column-gap:16px}
+    .stat-b{padding:11px 0;border-top:.5px solid var(--sep)}
+    .stat-b:nth-child(-n+2){border-top:none}
+    .card>.stat-b{border-top:none}
+    .stat-b .l{font-size:12.5px;color:var(--muted)}
+    .stat-b .v{font-size:18px;font-weight:600;margin-top:1px}
+    .stat-b .v.up{color:var(--up)}.stat-b .v.down{color:var(--down)}
+    .chart-w{position:relative;height:180px;padding:8px 0 12px}
+    .weight-bar{height:2px;background:var(--fill);border-radius:1px;margin-top:6px;overflow:hidden;max-width:160px}
+    .weight-bar>div{height:100%;background:var(--accent)}
+    .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;text-align:center}
+    .cal-h{font-size:11px;color:var(--muted);padding:4px 0}
+    .cal-d{padding:7px 2px;border-radius:8px;font-size:13px;cursor:pointer;min-height:40px}
+    .cal-d.has{font-weight:600}
+    .cal-d.up{background:color-mix(in srgb,var(--up) 12%,transparent);color:var(--up)}
+    .cal-d.down{background:color-mix(in srgb,var(--down) 12%,transparent);color:var(--down)}
+    .cal-d.sel{box-shadow:inset 0 0 0 1.5px var(--accent)}
     .cal-d.mute{opacity:.35}
-    .modal-ov{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:flex-end;justify-content:center;z-index:100;opacity:0;pointer-events:none;transition:opacity .25s}
+    #p-calendar .card{padding-bottom:12px}
+    .modal-ov{position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:flex-end;justify-content:center;z-index:100;opacity:0;pointer-events:none;transition:opacity .3s}
     .modal-ov.show{opacity:1;pointer-events:auto}
-    .modal{background:#fff;width:100%;max-width:680px;border-radius:20px 20px 0 0;padding:18px 14px 26px;max-height:90vh;overflow-y:auto;transform:translateY(100%);transition:transform .3s cubic-bezier(.32,.72,0,1)}
+    .modal{background:var(--card);width:100%;max-width:640px;border-radius:14px 14px 0 0;padding:8px 16px calc(24px + var(--sb));max-height:90vh;overflow-y:auto;transform:translateY(100%);transition:transform .4s var(--ease)}
+    .modal::before{content:"";display:block;width:36px;height:5px;border-radius:3px;background:var(--fill);margin:0 auto 10px}
     .modal-ov.show .modal{transform:translateY(0)}
-    .modal-hd{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
-    .modal-tt{font-size:1.05rem;font-weight:700}
-    .modal-x{width:28px;height:28px;border-radius:50%;border:none;background:#f1f5f9;font-size:1.1rem;cursor:pointer}
-    .suggest{display:none;position:absolute;left:0;right:0;top:100%;z-index:40;background:#fff;border:1px solid #e2e8f0;border-radius:10px;max-height:180px;overflow-y:auto;box-shadow:0 8px 20px rgba(0,0,0,.1)}
-    .last-u{font-size:.66rem;color:#94a3b8;text-align:center;margin-bottom:6px}
+    .modal-hd{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
+    .modal-tt{font-size:17px;font-weight:600}
+    .modal-x{width:30px;height:30px;border-radius:15px;border:none;background:var(--fill);color:var(--muted);font-size:18px;line-height:1;cursor:pointer}
+    .suggest{display:none;position:absolute;left:0;right:0;top:100%;z-index:40;background:var(--card);border:.5px solid var(--sep);border-radius:10px;max-height:180px;overflow-y:auto;box-shadow:0 8px 24px rgba(0,0,0,.14)}
+    .suggest>*{color:var(--text)}
+    .last-u{font-size:12px;color:var(--muted);text-align:center;margin-bottom:18px}
+    [id^="p-"]{animation:pgIn .28s var(--ease)}
+    @keyframes pgIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+    @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+    /* 快捷记账 */
+    .qa-kv{display:flex;justify-content:space-between;align-items:center;gap:10px}
+    .qa-kv code,.qa-code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;color:var(--text2);word-break:break-all}
+    .qa-code{display:block;background:var(--fill);border-radius:8px;padding:8px 10px;margin-top:6px;white-space:pre-wrap}
+    .qa-steps{font-size:13.5px;color:var(--text2);line-height:1.6;padding-left:18px}
+    .qa-steps li{margin:4px 0}
+    details.qa summary{cursor:pointer;color:var(--accent);font-size:15px;font-weight:500;list-style:none;padding:11px 0}
+    details.qa summary::-webkit-details-marker{display:none}
   </style>
 </head>
 <body>
 <div class="container">
   <header>
-    <h1>💰 全能资产管家</h1>
+    <h1><span class="dot"></span>全能资产管家</h1>
     <div class="sum-grid">
       <div class="sum-card full">
         <div class="sum-l">净资产（资产 − 待还）</div>
@@ -130,20 +183,20 @@
   </header>
 
   <div class="tabs" id="tabs">
-    <button class="tab active" data-t="home">总览</button>
-    <button class="tab" data-t="accounts">账户</button>
-    <button class="tab" data-t="invest">投资</button>
-    <button class="tab" data-t="calendar">日历</button>
-    <button class="tab" data-t="debt">待还</button>
-    <button class="tab" data-t="record">记账</button>
-    <button class="tab" data-t="settings">设置</button>
+    <button class="tab active" data-t="home"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/></svg><span>总览</span></button>
+    <button class="tab" data-t="accounts"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M3 10h18M7 15h4"/></svg><span>账户</span></button>
+    <button class="tab" data-t="invest"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/></svg><span>投资</span></button>
+    <button class="tab" data-t="calendar"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4.5" width="18" height="16" rx="2.5"/><path d="M3 9.5h18M8 3v3M16 3v3"/></svg><span>日历</span></button>
+    <button class="tab" data-t="debt"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg><span>待还</span></button>
+    <button class="tab" data-t="record"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg><span>记账</span></button>
+    <button class="tab" data-t="settings"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg><span>设置</span></button>
   </div>
 
   <!-- 总览 -->
   <div id="p-home">
     <div class="refresh-bar">
-      <button class="btn btn-p" id="btnRef" onclick="refreshQuotes()">🔄 刷新行情</button>
-      <button class="btn btn-o" onclick="markClose()">📌 标记收盘</button>
+      <button class="btn btn-p" id="btnRef" onclick="refreshQuotes()"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg><span>刷新行情</span></button>
+      <button class="btn btn-o" onclick="markClose()"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 21V4h12l-2.5 4L17 12H5"/></svg><span>标记收盘</span></button>
     </div>
     <div class="last-u" id="lastU">尚未刷新</div>
     <div class="card">
@@ -186,7 +239,7 @@
     </div>
     <div class="card">
       <div class="card-t">
-        <span>持仓 <span id="posCnt" style="font-weight:400;color:#94a3b8;font-size:.75rem"></span></span>
+        <span>持仓 <span id="posCnt" style="font-weight:400;color:var(--muted);font-size:13px"></span></span>
         <span>
           <button class="btn-sm pri" onclick="openPosModal()">＋ 持仓</button>
           <button class="btn-sm warn" onclick="openDcaModal()">定投</button>
@@ -254,6 +307,18 @@
 
   <!-- 设置 -->
   <div id="p-settings" style="display:none">
+    <div class="card" id="quickCard">
+      <div class="card-t">快捷记账（不打开 App 也能记）</div>
+      <p class="hint" style="margin-bottom:6px">付完款后，在 iPhone 上轻点背面两下或点小组件，输入金额、选分类就记好了。记录先存进你的私密 Gist，下次打开本页或同步时自动导入账本。</p>
+      <div class="item qa-kv"><span>默认账户</span><select class="form-c" id="qaAcc" style="width:auto;max-width:60%;padding:6px 30px 6px 10px;font-size:15px" onchange="setQuickAcc(this.value)"></select></div>
+      <div class="item qa-kv"><span>Gist ID</span><span><code id="qaGist">--</code> <button class="btn-sm" onclick="copyQA('qaGist')">复制</button></span></div>
+      <div class="item"><div class="qa-kv"><span>分类（快捷指令菜单用）</span><button class="btn-sm" onclick="copyQA('qaCats')">复制</button></div><code class="qa-code" id="qaCats"></code></div>
+      <div class="item"><details class="qa"><summary>iPhone 快捷指令设置步骤</summary><div id="qaSteps"></div>
+        <button class="btn-sm" style="margin:8px 0 6px" onclick="copyQA('qaSteps')">复制全部步骤</button></details></div>
+      <div class="item"><details class="qa"><summary>备用：网址快捷记账</summary>
+        <p class="hint">打开下面这种网址会立刻记一笔（不需要同步），可做成主屏书签或快捷指令里的「打开网址」：</p>
+        <code class="qa-code" id="qaUrl"></code></details></div>
+    </div>
     <div class="card">
       <div class="card-t">数据</div>
       <div class="item" style="display:flex;justify-content:space-between;align-items:center">
@@ -281,8 +346,9 @@
   </div>
 </div>
 
-<button class="fab" onclick="fabAction()">＋</button>
+<button class="fab" onclick="fabAction()" aria-label="添加"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
 <div class="toast" id="toast"></div>
+<script src="quick.js"></script>
 
 <!-- 账户弹窗 -->
 <div class="modal-ov" id="accModal">
@@ -437,6 +503,7 @@ function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(
 function today(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 function fmt(n,d=2){ if(n==null||isNaN(n)) return '--'; return Number(n).toLocaleString('zh-CN',{minimumFractionDigits:d,maximumFractionDigits:d}); }
 function fmtP(n){ return n==null||isNaN(n)?'--':((n>=0?'+':'')+fmt(n)); }
+function cssVar(n){ return getComputedStyle(document.documentElement).getPropertyValue(n).trim()||'#888'; }
 function toast(m,ms=2800){ const e=document.getElementById('toast'); e.textContent=m; e.classList.add('show'); setTimeout(()=>e.classList.remove('show'),ms); }
 function toCNY(a,c){ if(a==null||isNaN(a)) return 0; if(c==='CNY') return a; return a*(S.rates[c]||1); }
 function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
@@ -670,7 +737,7 @@ async function updateOne(p){
 
 async function refreshQuotes(){
   const btn=document.getElementById('btnRef');
-  btn.disabled=true; btn.textContent='刷新中...';
+  btn.disabled=true; btn.querySelector('span').textContent='刷新中…';
   await fetchRates();
   let ok=0,fail=0; const fails=[];
   for(const p of S.positions){
@@ -680,7 +747,7 @@ async function refreshQuotes(){
   S.lastRefresh=Date.now();
   syncInvestAccount();
   save(); renderAll();
-  btn.disabled=false; btn.textContent='🔄 刷新行情';
+  btn.disabled=false; btn.querySelector('span').textContent='刷新行情';
   toast(fail?`成功 ${ok}，失败 ${fail}\n`+fails.slice(0,2).join('\n'):`刷新成功 ${ok} 个`, fail?5000:2500);
 }
 
@@ -816,12 +883,12 @@ function renderAll(){
   const labels=S.history.slice(-30).map(h=>h.date.slice(5));
   const data=S.history.slice(-30).map(h=>h.totalValue);
   const ctx=document.getElementById('navChart');
-  if(ctx){
+  if(ctx && window.Chart){
     if(navChart) navChart.destroy();
     navChart=new Chart(ctx,{
       type:'line',
-      data:{labels,datasets:[{data,borderColor:'#0f766e',backgroundColor:'rgba(15,118,110,.1)',fill:true,tension:.3,pointRadius:2}]},
-      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{ticks:{font:{size:10}}},x:{ticks:{font:{size:9}},grid:{display:false}}}}
+      data:{labels,datasets:[{data,borderColor:cssVar('--accent'),backgroundColor:'transparent',fill:false,tension:.25,pointRadius:0,borderWidth:2}]},
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{border:{display:false},grid:{color:cssVar('--sep')},ticks:{color:cssVar('--muted'),font:{size:10}}},x:{border:{display:false},ticks:{color:cssVar('--muted'),font:{size:10}},grid:{display:false}}}}
     });
   }
 
@@ -831,6 +898,7 @@ function renderAll(){
   renderLedger();
   renderCal();
   fillSelects();
+  renderQuick();
 }
 
 function renderAccounts(){
@@ -879,7 +947,7 @@ function renderInvest(){
         <div class="item-meta">数量 ${fmt(p.qty,4)} · 成本 ${fmt(p.cost)} · 现价 ${c.has?fmt(p.price):'<span style="color:var(--warning)">待更新</span>'}
           ${c.dayPnlCNY!=null?` · <span class="item-pnl ${c.dayPnlCNY>=0?'up':'down'}">今 ${fmtP(c.dayPnlCNY)}</span>`:''}
         </div>
-        ${p.priceError?`<div style="font-size:.65rem;color:#f59e0b">⚠ ${esc(p.priceError)}</div>`:''}
+        ${p.priceError?`<div style="font-size:12px;color:var(--warning);margin-top:3px">行情获取失败：${esc(p.priceError)}</div>`:''}
         <div class="btn-row">
           <button class="btn-sm pri" onclick="openPrice('${p.id}')">改价</button>
           <button class="btn-sm" onclick="editPos('${p.id}')">编辑</button>
@@ -957,7 +1025,7 @@ function renderCal(){
     let cls='cal-d';
     if(h){ cls+=' has '+(h.totalPnl>=0?'up':'down'); }
     if(calSel===ds) cls+=' sel';
-    html+=`<div class="${cls}" onclick="selDay('${ds}')">${d}${h?`<div style="font-size:.55rem">${fmtP(h.totalPnl).replace('+','')}</div>`:''}</div>`;
+    html+=`<div class="${cls}" onclick="selDay('${ds}')">${d}${h?`<div style="font-size:10px;font-weight:500">${fmtP(h.totalPnl).replace('+','')}</div>`:''}</div>`;
   }
   document.getElementById('calBody').innerHTML=html;
   if(calSel) showDay(calSel); else document.getElementById('calDetail').innerHTML='<div class="empty">点击有颜色的日期查看当日盈亏明细</div>';
@@ -1142,6 +1210,63 @@ function importAll(ev){
 function clearAll(){ if(!confirm('确定清空全部数据？'))return;
   S={accounts:[],ledger:[],positions:[],history:[],dca:[],debts:[],rates:S.rates,lastRefresh:null}; save(); renderAll(); toast('已清空'); }
 
+// ===== 快捷记账 =====
+// sync.js 调用：把条目并入账本（按 qid 去重），返回新增记录
+window.AMQuickApply=function(entries){
+  const added=AMQuick.merge(S,entries||[]);
+  if(added.length){ save(); renderAll(); }
+  return added;
+};
+function setQuickAcc(id){ S.quickAccId=id||''; save(); }
+function quickSteps(gid){
+  const G=gid||'（你的 Gist ID，见上方）';
+  return [
+    '准备令牌：打开 github.com/settings/tokens/new?scopes=gist ，只勾选 gist，有效期选 No expiration，生成后复制 ghp_ 开头的令牌（可用和「多设备同步」同一个）。',
+    '打开「快捷指令」App，点右上角＋新建，命名「记一笔」。',
+    '添加「要求输入」：输入类型选「数字」，提示写「金额」。',
+    '添加「列表」：每行填一个分类（复制上面的分类列表）；再添加「从列表中选取」。',
+    '（可选）添加「要求输入」：类型「文本」，提示写「备注」。',
+    '添加「文本」，内容分三行：第1行插入变量「提供的输入」（金额），第2行插入「所选项目」，第3行插入备注那一步的「提供的输入」（没有备注就只写两行）。收入在金额前加 +，或分类选「工资」等收入分类。',
+    '添加「获取 URL 的内容」：URL 填 https://api.github.com/gists/'+G+' ；点「显示更多」，方法选 PATCH；头部添加 Authorization，值填 Bearer 加一个空格再加你的令牌；请求体选 JSON。',
+    '在请求体里添加字段，类型「词典」，键填 files；在这个词典里再添加一个「词典」字段，键填 quick_ 然后插入变量「当前日期」再接 .txt（点日期变量 → 日期格式选「自定」，填 yyyyMMdd-HHmmss-SSS）；在最里层词典添加「文本」字段，键填 content，值插入上一步的「文本」。',
+    '添加「显示通知」，内容写：已记账 ¥ 并插入金额变量。点「完成」，先手动运行一次，回到本页同步后应看到「已导入 1 笔快捷记账」。',
+    '轻点背面触发：设置 → 辅助功能 → 触控 → 轻点背面 → 轻点两下 → 选「记一笔」。',
+    '小组件：长按桌面或锁屏 → 添加小组件 → 快捷指令 → 选「记一笔」。',
+    'Apple Pay 付款后自动记：快捷指令 → 自动化 → ＋ → 「交易」，选卡片，勾选「立即运行」，新建空白快捷指令：把第3步换成「快捷指令输入」的「金额」，备注改用「商家」，其余同上。（国内部分银行卡可能不支持「交易」触发。）'
+  ];
+}
+function renderQuick(){
+  const sel=document.getElementById('qaAcc'); if(!sel) return;
+  const accs=S.accounts.filter(a=>a.type!=='invest');
+  const cur=(AMQuick.pickAccount(S,'')||{}).id||'';
+  sel.innerHTML=accs.map(a=>`<option value="${a.id}" ${a.id===cur?'selected':''}>${esc(a.name)}</option>`).join('')||'<option value="">请先添加账户</option>';
+  const gid=localStorage.getItem('am_sync_gist_id')||'';
+  document.getElementById('qaGist').textContent=gid||'先在上方开启多设备同步';
+  document.getElementById('qaCats').textContent=AMQuick.CATS.concat(AMQuick.INCOME_CATS).join('  ');
+  document.getElementById('qaSteps').innerHTML='<ol class="qa-steps">'+quickSteps(gid).map(x=>`<li>${esc(x)}</li>`).join('')+'</ol>';
+  document.getElementById('qaUrl').textContent=location.origin+location.pathname+'?add=1&amt=38&cat='+encodeURIComponent('餐饮')+'&note='+encodeURIComponent('午饭');
+}
+function copyQA(id){
+  const el=document.getElementById(id); let t=el.innerText;
+  if(id==='qaCats') t=AMQuick.CATS.concat(AMQuick.INCOME_CATS).join('\n');
+  if(id==='qaSteps') t=quickSteps(localStorage.getItem('am_sync_gist_id')||'').map((x,i)=>(i+1)+'. '+x).join('\n');
+  (navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(()=>toast('已复制'),()=>toast('复制失败，请长按选择文字'));
+}
+// 网址快捷记账：index.html?add=1&amt=38&cat=餐饮&note=午饭[&type=income][&acc=支付宝][&id=唯一编号]
+function handleUrlAdd(){
+  const q=new URLSearchParams(location.search);
+  if(!q.has('add')) return;
+  const e=AMQuick.parseEntry(q.get('id')?'url_'+q.get('id'):AMQuick.newId(),
+    JSON.stringify({amount:q.get('amt')||q.get('amount')||'',type:q.get('type')||undefined,category:q.get('cat')||'',note:q.get('note')||'',account:q.get('acc')||'',date:q.get('date')||undefined}));
+  history.replaceState(null,'',location.pathname+location.hash);
+  if(!e) { setTimeout(()=>toast('快捷记账失败：金额无效'),300); return; }
+  const added=AMQuick.merge(S,[e]);
+  if(!added.length) return;
+  save();
+  if(localStorage.getItem('am_sync_token')) AMQuick.addPending(localStorage,[e]);
+  setTimeout(()=>toast(`已记账 ${e.type==='income'?'+':''}¥${fmt(e.amount)}${e.category?' · '+e.category:''}`),300);
+}
+
 function fabAction(){
   const t=document.querySelector('.tab.active')?.dataset.t;
   if(t==='accounts') openAccModal();
@@ -1162,6 +1287,7 @@ function switchTab(name){
 document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>switchTab(t.dataset.t)));
 
 load();
+handleUrlAdd();
 if(!S.accounts.some(a=>a.type==='invest'||a.name==='投资账户')){
   // ensure invest account after positions loaded
 }

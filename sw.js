@@ -1,11 +1,12 @@
 // 全能资产管家 service worker: app shell cache-first, price/rate APIs network-only.
 const PREFIX = 'asset-manager-';
-const CACHE = PREFIX + 'v4';
+const CACHE = PREFIX + 'v5';
 const CHART_JS = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js';
 const SHELL = [
   './',
   './index.html',
   './sync.js',
+  './quick.js',
   './manifest.webmanifest',
   './icons/icon-192.png',
   './icons/icon-512.png',

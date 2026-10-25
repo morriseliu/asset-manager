@@ -13,7 +13,8 @@
     lastAt: 'am_sync_last_at', lastMsg: 'am_sync_last_msg', backup: 'am_sync_backup'
   };
   var PUSH_DELAY = 2500;
-  var busy = false, pushTimer = null, pending = false;
+  var busy = false, pushTimer = null, pending = false, reloading = false;
+  var Q = window.AMQuick, lastInbox = [];   // 最近一次读取 Gist 时看到的快捷记账文件
 
   function g(k) { return localStorage.getItem(k); }
   function s(k, v) { localStorage.setItem(k, String(v)); }
@@ -83,6 +84,7 @@
   }
   function readGist(id) {
     return gh('GET', '/gists/' + id).then(function (gist) {
+      lastInbox = Object.keys(gist.files || {}).filter(function (n) { return Q && Q.isInboxName(n); }).map(function (n) { return gist.files[n]; });
       var f = gist.files && gist.files[FILE];
       if (!f) { var e = new Error('Gist 中没有数据文件'); e.notFound = true; throw e; }
       var p = (f.truncated && f.raw_url) ? fetch(f.raw_url, { cache: 'no-store' }).then(function (r) { return r.text(); }) : Promise.resolve(f.content);
@@ -117,6 +119,13 @@
     DATA_KEYS.forEach(function (k) {
       if (Object.prototype.hasOwnProperty.call(remote.data, k)) localStorage.setItem(k, remote.data[k]); else localStorage.removeItem(k);
     });
+    // 本机还没上传的快捷记账，合并进云端数据，不会被覆盖丢失
+    var pend = Q ? Q.readPending(localStorage) : [];
+    if (pend.length) { try {
+      var st = JSON.parse(localStorage.getItem(DATA_KEYS[0]) || '{}'); st.accounts = st.accounts || []; st.ledger = st.ledger || [];
+      if (Q.merge(st, pend).length) localStorage.setItem(DATA_KEYS[0], JSON.stringify(st));
+    } catch (e) {} }
+    reloading = true;
     s(K.localTs, remote.updatedAt); s(K.lastTs, remote.updatedAt); s(K.fp, fingerprint(snapshot()));
     done(why || '已从云端下载（云端 ' + fmtT(remote.updatedAt) + '）');
     setTimeout(function () { location.reload(); }, 600);
@@ -125,7 +134,42 @@
     var payload = localPayload();
     if (remoteForBackup) backup('云端（被本机覆盖前）', remoteForBackup);
     var p = id ? writeGist(id, payload) : createGist(payload);
-    return p.then(function () { s(K.lastTs, payload.updatedAt); done('已上传到云端（' + fmtT(payload.updatedAt) + '）'); });
+    return p.then(function () {
+      s(K.lastTs, payload.updatedAt);
+      if (Q) Q.prunePending(localStorage, payload.data[DATA_KEYS[0]]);
+      done('已上传到云端（' + fmtT(payload.updatedAt) + '）');
+    });
+  }
+
+  // ---------- 快捷记账收件箱 ----------
+  // 读取 Gist 里的 quick_* 文件 → 并入账本（按 qid 去重）→ 上传账本 → 只删除已确认入账的那几个文件（期间新增的不受影响）
+  function processQuick(id, allowPush) {
+    if (!Q || typeof window.AMQuickApply !== 'function' || reloading) return Promise.resolve();
+    var files = lastInbox.slice(); lastInbox = [];
+    return Promise.all(files.map(function (f) {
+      var p = (f.truncated && f.raw_url) ? fetch(f.raw_url, { cache: 'no-store' }).then(function (r) { return r.text(); }) : Promise.resolve(f.content);
+      return p.then(function (c) { return { name: f.filename, entry: Q.parseEntry(f.filename, c) }; }, function () { return null; });
+    })).then(function (list) {
+      list = list.filter(Boolean);
+      var entries = list.map(function (x) { return x.entry; }).filter(Boolean);
+      if (entries.length) Q.addPending(localStorage, entries);          // 先记到本机，崩溃/刷新也不丢
+      var added = window.AMQuickApply(entries.concat(Q.readPending(localStorage)));
+      var fromInbox = added.filter(function (r) { return entries.some(function (e) { return e.qid === r.qid; }); }).length;
+      if (fromInbox && typeof window.toast === 'function') window.toast('已导入 ' + fromInbox + ' 笔快捷记账');
+      if (!allowPush || !id) return;
+      clearTimeout(pushTimer); pushTimer = null;
+      var needPush = Q.readPending(localStorage).length > 0;
+      markLocalChange();
+      if (needPush && num(K.localTs) <= num(K.lastTs)) s(K.localTs, Math.max(Date.now(), num(K.lastTs) + 1));
+      var go = num(K.localTs) > num(K.lastTs) ? push(id) : Promise.resolve();
+      return go.then(function () {
+        var have = {}; try { (JSON.parse(snapshot()[DATA_KEYS[0]] || '{}').ledger || []).forEach(function (t) { if (t.qid) have[t.qid] = 1; }); } catch (e) {}
+        // 解析失败的文件保留在 Gist，方便排查；已入账的删除
+        var del = {}, n = 0;
+        list.forEach(function (x) { if (x.entry && have[x.entry.qid] && Q.readPending(localStorage).every(function (e) { return e.qid !== x.entry.qid; })) { del[x.name] = null; n++; } });
+        if (n) return gh('PATCH', '/gists/' + id, { files: del });
+      });
+    });
   }
 
   // ---------- flows ----------
@@ -154,7 +198,7 @@
         if (!last && !hasData(snapshot())) return applyRemote(res.remote);
         // 首次在本机连接：两边都有数据时让用户选
         if (!last && hasData(snapshot()) && hasData(res.remote.data) && fingerprint(snapshot()) !== fingerprint(res.remote.data)) {
-          if (!interactive) { status('云端和本机都有数据，请在「设置 → 多设备同步」中选择上传或下载', true); return; }
+          if (!interactive) { status('云端和本机都有数据，请在「设置 → 多设备同步」中选择上传或下载', true); return 'hold'; }
           if (confirm('云端已有数据（' + fmtT(r) + '），本机也有数据。\n\n确定：用云端覆盖本机（本机数据会先备份）\n取消：用本机覆盖云端（云端数据会先备份）')) return applyRemote(res.remote);
           return push(res.id, res.remote);
         }
@@ -168,8 +212,12 @@
         if (dirty) return push(res.id);
         s(K.lastTs, last || r);
         done('已是最新（' + fmtT(r) + '）');
-      });
+      }).then(function (r) { if (r !== 'hold') return processQuick(g(K.gist), true); });
     });
+  }
+  // 自动同步关闭时：打开页面也把收件箱并入本机（不上传、不删除云端文件，下次按 qid 去重）
+  function importOnly() {
+    return run(function () { return locate().then(function (res) { if (res.remote) return processQuick(res.id, false); }); });
   }
   function manualUpload() {
     return run(function () {
@@ -232,6 +280,7 @@
       rb.style.display = b ? 'flex' : 'none';
       var lab = document.getElementById('syncRestoreLab'); if (lab && b) lab.textContent = '恢复备份（' + b.source + '，' + fmtT(b.savedAt) + '）';
     }
+    if (typeof window.renderQuick === 'function') try { window.renderQuick(); } catch (e) {}
     var lt = document.getElementById('syncLast'); if (lt) lt.textContent = '上次同步：' + fmtT(num(K.lastAt)) + (g(K.gist) ? ' · Gist ' + g(K.gist).slice(0, 7) : '');
   }
   function buildUI() {
@@ -249,7 +298,7 @@
       '<button class="btn-sm pri" id="syncSave">保存</button><button class="btn-sm dan" id="syncClear">清除</button></div>' +
       '<div class="item" style="' + row + '"><span>令牌</span><span id="syncTokenState" class="hint" style="margin:0"></span></div>' +
       '<div class="item" style="' + row + '"><span>自动同步（打开时拉取、改动后上传）</span><input type="checkbox" id="syncAuto" style="width:20px;height:20px"></div>' +
-      '<div class="item" style="' + row + '"><span>手动同步</span><span><button class="btn-sm pri" id="syncUp">⬆ 上传</button> <button class="btn-sm warn" id="syncDown">⬇ 下载</button></span></div>' +
+      '<div class="item" style="' + row + '"><span>手动同步</span><span><button class="btn-sm pri" id="syncUp">上传</button> <button class="btn-sm warn" id="syncDown">下载</button></span></div>' +
       '<div class="item" id="syncRestoreRow" style="' + row + ';display:none"><span id="syncRestoreLab" style="font-size:.8rem">恢复备份</span><button class="btn-sm" id="syncRestore">恢复</button></div>' +
       '<div id="syncStatus" style="font-size:.78rem;margin-top:6px;color:var(--muted)"></div>' +
       '<div id="syncLast" style="font-size:.7rem;color:#94a3b8;margin-top:2px"></div>';
@@ -276,11 +325,14 @@
 
   buildUI();
   if (!g(K.fp)) { s(K.fp, fingerprint(snapshot())); }
+  // 网址快捷记账在本脚本加载前已写入本机：不把它当作「冲突改动」，同步拉取后再单独上传（见 processQuick）
+  if (Q && Q.readPending(localStorage).length) s(K.fp, fingerprint(snapshot()));
   if (token() && g(K.auto) === '1') autoSync(false);
+  else if (token()) importOnly();
   document.addEventListener('visibilitychange', function () {
     if (!token() || g(K.auto) !== '1') return;
     if (document.visibilityState === 'hidden' && pushTimer) { clearTimeout(pushTimer); pushTimer = null; autoSync(false); }
     else if (document.visibilityState === 'visible') autoSync(false);
   });
-  window.AMSync = { syncNow: function () { return autoSync(true); }, upload: manualUpload, download: manualDownload, _keys: K, _fp: fingerprint, _snapshot: snapshot };
+  window.AMSync = { syncNow: function () { return autoSync(true); }, upload: manualUpload, download: manualDownload, gistId: function () { return g(K.gist) || ''; }, hasToken: function () { return !!token(); }, _keys: K, _fp: fingerprint, _snapshot: snapshot };
 })();
