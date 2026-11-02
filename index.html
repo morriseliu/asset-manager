@@ -196,9 +196,9 @@
   <div id="p-home">
     <div class="refresh-bar">
       <button class="btn btn-p" id="btnRef" onclick="refreshQuotes()"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg><span>刷新行情</span></button>
-      <button class="btn btn-o" onclick="markClose()"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 21V4h12l-2.5 4L17 12H5"/></svg><span>标记收盘</span></button>
     </div>
     <div class="last-u" id="lastU">尚未刷新</div>
+    <div class="last-u" id="autoU"></div>
     <div class="card">
       <div class="card-t">资产结构</div>
       <div class="stat-g" id="homeStats"></div>
@@ -344,7 +344,7 @@
         • 股票/港股/美股：腾讯行情（script 通道）<br>
         • 基金：天天基金估值/净值接口<br>
         • 加密：CoinGecko + Binance 回退<br>
-        • 标记收盘后，日历可查看每日盈亏明细<br>
+        • 每天北京时间 6:00 后打开 App，自动记录上一交易日收盘盈亏（A股/港股/基金净值/美股），漏掉的日子自动补上；日历可看明细<br>
         • 投资盈亏会计入「投资账户」联动总资产<br>
         • 数据默认存在本机浏览器；在「设置 → 多设备同步」开启后，也会保存到你自己的 GitHub 私密 Gist
       </p>
@@ -854,33 +854,79 @@ function syncInvestAccount(){
   }
 }
 
-function markClose(){
-  if(!S.positions.length){ toast('暂无持仓'); return; }
-  const date=today();
-  const details=[];
-  let totalDay=0, hasDay=false;
-  for(const p of S.positions){
-    const c=calcPos(p);
-    if(p.price!=null){ p.closePrice=+p.price; p.closeDate=date; }
-    const day=c.dayPnlCNY;
-    if(day!=null){ totalDay+=day; hasDay=true; }
-    details.push({
-      id:p.id, name:p.name||p.symbol, type:p.type, symbol:p.symbolNorm||p.symbol,
-      dayPnl: day, value:c.valueCNY, floating:c.floatingCNY, cumulative:c.cumulativeCNY,
-      price:p.price, qty:p.qty
-    });
+// ===== 每日收盘自动记录（替代手动「标记收盘」）=====
+// 记录按「交易日」存：例如 30 号 6:00 后打开，会写入 29 号的记录 = 29 号 A股/港股收盘 + 29 号基金净值 + 29 号美股（北京 30 号凌晨收盘）。
+// 每只持仓用自己市场的日K/净值历史判断是否开市：没有当天K线/净值 = 休市，不计入；所有市场都休市的日子不写记录。
+const BJ=8*3600e3;
+function bjDate(ms){ return new Date(ms+BJ).toISOString().slice(0,10); }
+function addDays(ds,n){ return new Date(Date.parse(ds+'T00:00:00Z')+n*864e5).toISOString().slice(0,10); }
+function qtyAt(p,ds){ ensureTrades(p); let q=0;
+  for(const t of p.trades.slice().sort((a,b)=>String(a.date).localeCompare(String(b.date)))){ if(t.side!=='base'&&String(t.date)>ds) continue; if(t.side==='base'&&String(t.date)>ds) continue; q+=t.side==='sell'?-(+t.qty||0):(+t.qty||0); }
+  return Math.max(0,q); }
+async function fetchBars(p){ // 返回 {日期: 收盘价/净值}
+  const code=p.symbolNorm||normSym(p.symbol,p.type); if(!code) return null;
+  const pick=(o,k)=>{ const d=o&&o.data&&o.data[k]; return d&&(d.qfqday||d.day)||[]; };
+  if(p.type==='fund'){
+    const r=await fetch('https://fundmobapi.eastmoney.com/FundMNewApi/FundMNHisNetList?FCODE='+code+'&pageIndex=1&pagesize=40&deviceid=1&plat=Iphone&product=EFund&version=6.5.5',{cache:'no-store'});
+    const d=await r.json(); const m={}; (d.Datas||[]).forEach(x=>{ const v=parseFloat(x.DWJZ); if(v) m[x.FSRQ]=v; }); return m;
   }
-  details.sort((a,b)=>Math.abs(b.dayPnl||0)-Math.abs(a.dayPnl||0));
-  const inv=investValue();
-  const rec={date, totalPnl:hasDay?totalDay:(inv.day||0), totalValue:inv.value, details};
-  const i=S.history.findIndex(h=>h.date===date);
-  if(i>=0) S.history[i]=rec; else S.history.push(rec);
-  S.history.sort((a,b)=>a.date.localeCompare(b.date));
-  if(S.history.length>120) S.history=S.history.slice(-120);
-  syncInvestAccount();
-  save(); renderAll();
-  toast('已标记收盘 · 日历可看每只明细');
+  if(p.type!=='stock'&&p.type!=='other') return null;
+  const u=k=>'https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param='+k+',day,,,40,qfq';
+  let k=code, j=await (await fetch(u(k),{cache:'no-store'})).json(), bars=pick(j,k);
+  if(/^us/.test(code)&&bars.length<5){ // 美股需带交易所后缀（如 usAAPL.OQ）才有完整日K
+    const full=j&&j.data&&j.data[k]&&j.data[k].qt&&(j.data[k].qt[k]||[])[2];
+    if(full&&full.includes('.')){ k='us'+full; j=await (await fetch(u(k),{cache:'no-store'})).json(); bars=pick(j,k); }
+  }
+  const m={}; bars.forEach(b=>{ const v=parseFloat(b[2]); if(v) m[b[0]]=v; }); return m;
 }
+let autoBusy=false;
+async function autoDailyClose(force){
+  if(autoBusy||!S.positions.length) return; const now=Date.now();
+  const end=addDays(bjDate(now), new Date(now+BJ).getUTCHours()>=6?-1:-2);
+  if(!force && S.autoClose && S.autoClose.end===end && now-S.autoClose.at<30*60e3) return;
+  autoBusy=true;
+  try{
+    const autos=S.history.filter(h=>h.auto).map(h=>h.date).sort();
+    let start=autos.length?addDays(autos[autos.length-1],-4):addDays(end,-7); // 近 5 天自动记录会重算（基金净值晚到也能补上）
+    if(start<addDays(end,-30)) start=addDays(end,-30);
+    await fetchRates();
+    const bars={};
+    await Promise.all(S.positions.map(async p=>{ try{ bars[p.id]=await fetchBars(p); }catch(e){ bars[p.id]=undefined; } }));
+    const failed=S.positions.filter(p=>bars[p.id]===undefined).length;
+    let wrote=0;
+    for(let T=start; T<=end; T=addDays(T,1)){
+      const old=S.history.find(h=>h.date===T);
+      if(old&&!old.auto) continue; // 保留以前手动标记的记录
+      const details=[]; let total=0, value=0, open=false;
+      for(const p of S.positions){
+        const m=bars[p.id]; const q=qtyAt(p,T);
+        if(m===undefined){ const od=old&&old.details&&old.details.find(d=>d.id===p.id); if(od){ details.push(od); total+=od.dayPnl||0; value+=od.value||0; open=true; } continue; } // 本次拉取失败：沿用旧明细
+        if(!m||!q) continue;
+        const ds=Object.keys(m).sort(); const i=ds.indexOf(T);
+        const lastI=ds.filter(d=>d<=T).length-1;
+        if(lastI>=0) value+=toCNY(q*m[ds[lastI]],p.currency);
+        if(i<1) continue; open=true;
+        const day=toCNY(q*(m[T]-m[ds[i-1]]),p.currency);
+        total+=day;
+        details.push({id:p.id,name:p.name||p.symbol,type:p.type,symbol:p.symbolNorm||p.symbol,dayPnl:day,value:toCNY(q*m[T],p.currency),price:m[T],prev:m[ds[i-1]],qty:q});
+      }
+      if(!open) continue; // 全部休市（周末/节假日）不写
+      details.sort((a,b)=>Math.abs(b.dayPnl||0)-Math.abs(a.dayPnl||0));
+      const rec={date:T,totalPnl:total,totalValue:value,details,auto:true,updatedAt:now};
+      const i=S.history.findIndex(h=>h.date===T);
+      if(i>=0) S.history[i]=rec; else S.history.push(rec);
+      wrote++;
+    }
+    S.history.sort((a,b)=>a.date.localeCompare(b.date));
+    if(S.history.length>400) S.history=S.history.slice(-400);
+    S.autoClose={end,at:now,failed};
+    save(); renderAll();
+  }finally{ autoBusy=false; renderAutoU(); }
+}
+function renderAutoU(){ const e=document.getElementById('autoU'); if(!e) return; const a=S.autoClose;
+  e.textContent=a?`收盘盈亏已自动记录到 ${a.end}${a.failed?`（${a.failed} 只行情获取失败，下次打开重试）`:''}`:'每天 6:00 后打开会自动记录收盘盈亏'; }
+document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible') autoDailyClose(); });
+setInterval(()=>autoDailyClose(),10*60e3);
 
 // ===== Render =====
 function renderAll(){
@@ -895,7 +941,7 @@ function renderAll(){
   document.getElementById('totalDebt').textContent='¥'+fmt(debt);
   const tp=document.getElementById('todayPnl');
   if(inv.day!=null){ tp.textContent=fmtP(inv.day); tp.className='sum-v sm '+(inv.day>=0?'up':'down'); }
-  else { tp.textContent='需刷新/标记'; tp.className='sum-v sm neu'; }
+  else { tp.textContent='需刷新行情'; tp.className='sum-v sm neu'; }
   const ip=document.getElementById('investPnl');
   ip.textContent=fmtP(inv.cum); ip.className='sum-v sm '+(inv.cum>=0?'up':'down');
   document.getElementById('lastU').textContent=S.lastRefresh?'上次刷新：'+new Date(S.lastRefresh).toLocaleString('zh-CN'):'尚未刷新';
@@ -1098,12 +1144,12 @@ function showDay(ds){
     const total=details.reduce((s,d)=>s+(d.dayPnl||0),0);
     h={date:ds,totalPnl:total,details,live:true};
   }
-  if(!h){ el.innerHTML='<div class="empty">该日无记录<br><span class="hint">当天先点「标记收盘」才会留下明细</span></div>'; return; }
+  if(!h){ el.innerHTML='<div class="empty">该日无记录<br><span class="hint">休市日或当天还没持仓时不会有记录</span></div>'; return; }
   let details=h.details||[];
   // 旧记录无明细：提示重新标记
   if(!details.length){
     el.innerHTML=`<div class="stat-b" style="margin-bottom:8px"><div class="l">当日合计</div><div class="v ${h.totalPnl>=0?'up':'down'}">${fmtP(h.totalPnl)}</div></div>
-      <div class="empty">这条是旧记录，没有分持仓明细<br><span class="hint">今天请再点一次「标记收盘」，之后每天都会有明细</span></div>`;
+      <div class="empty">这条是旧记录，没有分持仓明细<br><span class="hint">之后每天会自动生成分持仓明细</span></div>`;
     return;
   }
   details=[...details].sort((a,b)=>Math.abs(b.dayPnl||0)-Math.abs(a.dayPnl||0));
@@ -1367,6 +1413,7 @@ document.getElementById('ledDate').value=today();
 renderAll();
 if(location.hash==='#settings') switchTab('settings');
 fetchRates().then(()=>save());
+renderAutoU(); setTimeout(()=>autoDailyClose(),2500);
 </script>
 <script src="sync.js"></script>
 <script>
