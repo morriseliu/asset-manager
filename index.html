@@ -412,6 +412,26 @@
   </div>
 </div>
 
+<!-- 加仓 / 减仓 -->
+<div class="modal-ov" id="tradeModal">
+  <div class="modal">
+    <div class="modal-hd"><div class="modal-tt" id="tTitle">加仓</div><button class="modal-x" onclick="closeM('tradeModal')">×</button></div>
+    <input type="hidden" id="tPos"><input type="hidden" id="tSide">
+    <div class="hint" id="tNow" style="margin-bottom:10px"></div>
+    <div class="form-r">
+      <div class="form-g"><label>日期</label><input class="form-c" id="tDate" type="date"></div>
+      <div class="form-g"><label>手续费（可空）</label><input class="form-c" id="tFee" type="number" step="any" placeholder="0" oninput="tradePreview()"></div>
+    </div>
+    <div class="form-r">
+      <div class="form-g"><label>数量/份额</label><input class="form-c" id="tQty" type="number" step="any" oninput="tradePreview()"></div>
+      <div class="form-g"><label id="tPriceLab">买入价</label><input class="form-c" id="tPrice" type="number" step="any" oninput="tradePreview()"></div>
+    </div>
+    <div class="form-g"><label>备注（可空）</label><input class="form-c" id="tNote"></div>
+    <div class="hint" id="tPrev" style="margin-bottom:10px"></div>
+    <button class="btn btn-p" onclick="saveTrade()">确定</button>
+  </div>
+</div>
+
 <!-- 改价 -->
 <div class="modal-ov" id="priceModal">
   <div class="modal">
@@ -503,6 +523,30 @@ function load(){ try{ const r=localStorage.getItem(SK); if(r) S={...S,...JSON.pa
       S.ledger=d.transactions||d.ledger||[];
     }
   }catch(e){}
+  migrateTrades();
+}
+/* 持仓交易记录：老数据（只有一次买入）自动变成第一条「底仓」记录，不删除任何字段 */
+function ensureTrades(p){
+  if(Array.isArray(p.trades)&&p.trades.length) return false;
+  const d=p.createdAt?new Date(p.createdAt):new Date();
+  const ds=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  p.trades=[{id:uid(),side:'base',date:ds,qty:+p.qty||0,price:+p.cost||0,fee:0,ts:p.createdAt||Date.now()}];
+  if(p.realizedBase==null) p.realizedBase=+p.realizedPnl||0;
+  return true;
+}
+function migrateTrades(){ let ch=false; (S.positions||[]).forEach(p=>{ if(ensureTrades(p)) ch=true; }); if(ch) try{ localStorage.setItem(SK, JSON.stringify(S)); }catch(e){} }
+/** 按移动加权平均成本重算：数量、均价（含手续费）、已实现盈亏 */
+function recalcPos(p){
+  ensureTrades(p);
+  const r=v=>Math.round(v*1e8)/1e8;
+  const tr=p.trades.slice().sort((a,b)=>(a.side==='base'?-1:b.side==='base'?1:0)||String(a.date).localeCompare(String(b.date))||(a.ts||0)-(b.ts||0));
+  let qty=0,ct=0,real=+p.realizedBase||0;
+  for(const t of tr){
+    const q=+t.qty||0, pr=+t.price||0, f=+t.fee||0;
+    if(t.side==='sell'){ const avg=qty?ct/qty:0; const sq=Math.min(q,qty); t.pnl=r(sq*(pr-avg)-f); real+=t.pnl; ct-=avg*sq; qty=r(qty-sq); if(qty<=0){qty=0;ct=0;} }
+    else { qty=r(qty+q); ct+=q*pr+f; }
+  }
+  p.trades=tr; p.qty=qty; p.cost=qty?r(ct/qty):(+p.cost||0); p.realizedPnl=r(real);
 }
 function save(){ localStorage.setItem(SK, JSON.stringify(S)); }
 function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,6); }
@@ -928,6 +972,7 @@ function renderAccounts(){
 function renderInvest(){
   const q=(document.getElementById('posQ')?.value||'').toLowerCase();
   const ft=document.getElementById('posType')?.value||'';
+  S.positions.forEach(p=>{ if(!Array.isArray(p.trades)||!p.trades.length) recalcPos(p); });
   let list=S.positions.map(p=>({p,c:calcPos(p)}));
   if(q) list=list.filter(({p})=> (p.name||'').toLowerCase().includes(q)||(p.symbol||'').toLowerCase().includes(q)||(p.symbolNorm||'').toLowerCase().includes(q));
   if(ft) list=list.filter(({p})=>p.type===ft);
@@ -955,10 +1000,13 @@ function renderInvest(){
         </div>
         ${p.priceError?`<div style="font-size:12px;color:var(--warning);margin-top:3px">行情获取失败：${esc(p.priceError)}</div>`:''}
         <div class="btn-row">
-          <button class="btn-sm pri" onclick="openPrice('${p.id}')">改价</button>
+          <button class="btn-sm pri" onclick="openTrade('${p.id}','buy')">加仓</button>
+          <button class="btn-sm warn" onclick="openTrade('${p.id}','sell')">减仓</button>
+          <button class="btn-sm" onclick="openPrice('${p.id}')">改价</button>
           <button class="btn-sm" onclick="editPos('${p.id}')">编辑</button>
           <button class="btn-sm dan" onclick="delPos('${p.id}')">删除</button>
         </div>
+        ${tradeHist(p)}
       </div>`;
     }).join('');
   }
@@ -1099,14 +1147,18 @@ function delAcc(id){ if(!confirm('删除账户？'))return; S.accounts=S.account
 
 function openPosModal(){ document.getElementById('posId').value=''; document.getElementById('posTitle').textContent='添加持仓';
   ['pName','pSymbol','pQty','pCost','pPrice','pPlat'].forEach(id=>document.getElementById(id).value='');
-  document.getElementById('pType').value='stock'; document.getElementById('pCur').value='CNY'; document.getElementById('pReal').value='0'; openM('posModal'); }
+  document.getElementById('pType').value='stock'; document.getElementById('pCur').value='CNY'; document.getElementById('pReal').value='0';
+  ['pQty','pCost'].forEach(i=>{ const e=document.getElementById(i); e.disabled=false; e.title=''; }); openM('posModal'); }
 function editPos(id){ const p=S.positions.find(x=>x.id===id); if(!p)return;
   document.getElementById('posId').value=id; document.getElementById('posTitle').textContent='编辑持仓';
   document.getElementById('pName').value=p.name||''; document.getElementById('pType').value=p.type||'stock';
   document.getElementById('pSymbol').value=p.symbol||''; document.getElementById('pQty').value=p.qty??'';
   document.getElementById('pCost').value=p.cost??''; document.getElementById('pPrice').value=p.price??'';
   document.getElementById('pCur').value=p.currency||'CNY'; document.getElementById('pPlat').value=p.platform||'';
-  document.getElementById('pReal').value=p.realizedPnl||0; openM('posModal'); }
+  document.getElementById('pReal').value=p.realizedPnl||0;
+  ensureTrades(p); const lock=p.trades.length>1;
+  ['pQty','pCost'].forEach(i=>{ const e=document.getElementById(i); e.disabled=lock; e.title=lock?'已有加仓/减仓记录，请在交易记录里修改':''; });
+  openM('posModal'); }
 function savePos(){
   const id=document.getElementById('posId').value;
   const type=document.getElementById('pType').value;
@@ -1120,10 +1172,45 @@ function savePos(){
     realizedPnl:+document.getElementById('pReal').value||0
   };
   if(!data.name||!data.symbol) return toast('请填名称和代码');
-  if(id){ const i=S.positions.findIndex(p=>p.id===id); if(i>=0) S.positions[i]={...S.positions[i],...data}; }
-  else S.positions.push({id:uid(),...data,createdAt:Date.now()});
+  if(id){ const i=S.positions.findIndex(p=>p.id===id); if(i>=0){
+      const o=S.positions[i]; ensureTrades(o);
+      const sellReal=o.trades.filter(t=>t.side==='sell').reduce((s,t)=>s+(+t.pnl||0),0);
+      if(o.trades.length>1){ delete data.qty; delete data.cost; }
+      else { o.trades[0].qty=data.qty; o.trades[0].price=data.cost; }
+      o.realizedBase=data.realizedPnl-sellReal;
+      S.positions[i]={...o,...data}; recalcPos(S.positions[i]); } }
+  else { const np={id:uid(),...data,createdAt:Date.now()}; ensureTrades(np); S.positions.push(np); }
   syncInvestAccount(); save(); closeM('posModal'); renderAll(); toast('已保存 · '+data.symbolNorm);
 }
+const SIDE_N={base:'底仓',buy:'加仓',sell:'减仓'};
+function tradeHist(p){
+  const tr=p.trades||[]; if(!tr.length) return '';
+  const rows=tr.map(t=>`<div class="item-meta" style="display:flex;justify-content:space-between;gap:6px;padding:4px 0;border-top:0.5px solid var(--sep,rgba(128,128,128,.2))">
+      <span>${esc(t.date||'')} <span class="badge ${t.side==='sell'?'other':'stock'}">${SIDE_N[t.side]||t.side}</span> ${fmt(t.qty,4)} @ ${fmt(t.price,4)}${+t.fee?` · 费 ${fmt(t.fee)}`:''}${t.side==='sell'&&t.pnl!=null?` · <span class="item-pnl ${t.pnl>=0?'up':'down'}">实现 ${fmtP(t.pnl)}</span>`:''}${t.note?` · ${esc(t.note)}`:''}</span>
+      ${t.side!=='base'?`<button class="btn-sm dan" style="padding:2px 8px" onclick="delTrade('${p.id}','${t.id}')">删</button>`:''}
+    </div>`).join('');
+  return `<details class="trade-hist" style="margin-top:6px"><summary class="item-meta" style="cursor:pointer">交易记录（${tr.length} 笔）· 持仓 ${fmt(p.qty,4)} · 均价 ${fmt(p.cost,4)} · 总成本 ${fmt((+p.qty||0)*(+p.cost||0))}</summary>${rows}</details>`;
+}
+function openTrade(id,side){ const p=S.positions.find(x=>x.id===id); if(!p)return; ensureTrades(p);
+  document.getElementById('tPos').value=id; document.getElementById('tSide').value=side;
+  document.getElementById('tTitle').textContent=(side==='sell'?'减仓 · ':'加仓 · ')+p.name;
+  document.getElementById('tPriceLab').textContent=side==='sell'?'卖出价':'买入价';
+  document.getElementById('tNow').textContent=`当前持仓 ${fmt(p.qty,4)} · 均价 ${fmt(p.cost,4)} ${p.currency||''}`;
+  document.getElementById('tDate').value=today(); ['tQty','tFee','tNote'].forEach(i=>document.getElementById(i).value='');
+  document.getElementById('tPrice').value=p.price??''; tradePreview(); openM('tradeModal'); }
+function tradeDraft(){ const p=S.positions.find(x=>x.id===document.getElementById('tPos').value); if(!p) return null;
+  const side=document.getElementById('tSide').value, qty=+document.getElementById('tQty').value, price=+document.getElementById('tPrice').value, fee=+document.getElementById('tFee').value||0;
+  return {p,t:{id:uid(),side,date:document.getElementById('tDate').value||today(),qty,price,fee,note:document.getElementById('tNote').value.trim(),ts:Date.now()}}; }
+function tradePreview(){ const d=tradeDraft(), el=document.getElementById('tPrev'); if(!d||!(d.t.qty>0)||!(d.t.price>0)){ el.textContent=''; return; }
+  const c=JSON.parse(JSON.stringify(d.p)); c.trades.push(d.t); recalcPos(c);
+  el.textContent=d.t.side==='sell'?`减仓后：剩 ${fmt(c.qty,4)} · 均价 ${fmt(c.cost,4)} · 本笔实现盈亏 ${fmtP(c.trades.find(x=>x.id===d.t.id).pnl)}`:`加仓后：共 ${fmt(c.qty,4)} · 均价 ${fmt(c.cost,4)} · 总成本 ${fmt(c.qty*c.cost)}`; }
+function saveTrade(){ const d=tradeDraft(); if(!d) return; const {p,t}=d;
+  if(!(t.qty>0)||!(t.price>0)) return toast('请填数量和价格');
+  if(t.side==='sell'&&t.qty>(+p.qty||0)+1e-9) return toast('减仓数量不能超过当前持仓 '+fmt(p.qty,4));
+  p.trades.push(t); recalcPos(p); syncInvestAccount(); save(); closeM('tradeModal'); renderAll();
+  toast(t.side==='sell'?'已减仓':'已加仓 · 均价 '+fmt(p.cost,4)); }
+function delTrade(pid,tid){ const p=S.positions.find(x=>x.id===pid); if(!p||!confirm('删除这笔记录？'))return;
+  p.trades=p.trades.filter(t=>t.id!==tid||t.side==='base'); recalcPos(p); syncInvestAccount(); save(); renderAll(); }
 function delPos(id){ if(!confirm('删除持仓？'))return; S.positions=S.positions.filter(p=>p.id!==id); syncInvestAccount(); save(); renderAll(); }
 function openPrice(id){ const p=S.positions.find(x=>x.id===id); if(!p)return;
   document.getElementById('prId').value=id; document.getElementById('prLab').textContent=p.name+' 价格'; document.getElementById('prVal').value=p.price??''; openM('priceModal'); }
