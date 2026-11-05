@@ -220,8 +220,17 @@
   <!-- 账户 -->
   <div id="p-accounts" style="display:none">
     <div class="card">
-      <div class="card-t"><span>我的账户</span><button class="btn-sm pri" onclick="openAccModal()">＋ 账户</button></div>
+      <div class="card-t"><span>我的账户</span>
+        <span>
+          <button class="btn-sm warn" onclick="openTransfer()">转入/转出</button>
+          <button class="btn-sm pri" onclick="openAccModal()">＋ 账户</button>
+        </span>
+      </div>
       <div id="accList"></div>
+    </div>
+    <div class="card">
+      <div class="card-t">资金划转记录</div>
+      <div id="xferList"></div>
     </div>
   </div>
 
@@ -237,6 +246,15 @@
         <option value="other">其他</option>
       </select>
     </div>
+    <div class="card" id="investCashCard">
+      <div class="card-t"><span>投资账户资金</span>
+        <span>
+          <button class="btn-sm pri" onclick="openSetCash()">设置可用</button>
+          <button class="btn-sm warn" onclick="openTransfer()">转入/转出</button>
+        </span>
+      </div>
+      <div id="investCashBox" class="item-meta">加载中…</div>
+    </div>
     <div class="card">
       <div class="card-t">
         <span>持仓 <span id="posCnt" style="font-weight:400;color:var(--muted);font-size:13px"></span></span>
@@ -246,6 +264,10 @@
         </span>
       </div>
       <div id="posList"></div>
+    </div>
+    <div class="card">
+      <div class="card-t"><span>历史持仓 <span id="histCnt" style="font-weight:400;color:var(--muted);font-size:13px"></span></span></div>
+      <div id="histList"></div>
     </div>
     <div class="card">
       <div class="card-t">定投计划</div>
@@ -344,7 +366,7 @@
         • 股票/港股/美股：腾讯行情（script 通道）<br>
         • 基金：天天基金估值/净值接口<br>
         • 加密：CoinGecko + Binance 回退<br>
-        • 每天北京时间 6:00 后打开 App，自动记录上一交易日收盘盈亏（A股/港股/基金净值/美股），漏掉的日子自动补上；日历可看明细<br>
+        • 每天北京时间 6:00 后打开 App，自动记录上一交易日收盘盈亏；今日盈亏按「昨仓×昨收 + 今日买卖价」计算，当天新买不会用昨收<br>
         • 投资盈亏会计入「投资账户」联动总资产<br>
         • 数据默认存在本机浏览器；在「设置 → 多设备同步」开启后，也会保存到你自己的 GitHub 私密 Gist
       </p>
@@ -376,6 +398,36 @@
       <div class="form-g"><label>余额</label><input class="form-c" id="accBal" type="number" step="any" value="0"></div>
     </div>
     <button class="btn btn-p" onclick="saveAcc()">保存</button>
+  </div>
+</div>
+
+<!-- 设置投资可用资金 -->
+<div class="modal-ov" id="cashModal">
+  <div class="modal">
+    <div class="modal-hd"><div class="modal-tt">设置可用资金</div><button class="modal-x" onclick="closeM('cashModal')">×</button></div>
+    <p class="hint">填写投资账户里现在还能用来买的钱（人民币）。不会改你的持仓。买入会扣、卖出加回。</p>
+    <div class="form-g"><label>可用资金（¥）</label><input class="form-c" id="cashVal" type="number" step="any"></div>
+    <button class="btn btn-p" onclick="saveSetCash()">保存</button>
+  </div>
+</div>
+
+<!-- 账户互转 -->
+<div class="modal-ov" id="xferModal">
+  <div class="modal">
+    <div class="modal-hd"><div class="modal-tt">转入 / 转出</div><button class="modal-x" onclick="closeM('xferModal')">×</button></div>
+    <div class="form-g"><label>方向</label>
+      <select class="form-c" id="xferDir" onchange="fillXferSelects()">
+        <option value="in">其他账户 → 投资账户（转入）</option>
+        <option value="out">投资账户 → 其他账户（转出）</option>
+      </select>
+    </div>
+    <div class="form-g"><label>对方账户</label><select class="form-c" id="xferAcc"></select></div>
+    <div class="form-r">
+      <div class="form-g"><label>金额（¥）</label><input class="form-c" id="xferAmt" type="number" step="any"></div>
+      <div class="form-g"><label>日期</label><input class="form-c" id="xferDate" type="date"></div>
+    </div>
+    <div class="form-g"><label>备注（可空）</label><input class="form-c" id="xferNote"></div>
+    <button class="btn btn-p" onclick="saveTransfer()">确认划转</button>
   </div>
 </div>
 
@@ -488,6 +540,7 @@ let S = {
   ledger: [],
   positions: [],
   history: [],
+  transfers: [],
   dca: [],
   debts: [],
   rates: { USD: 7.15, HKD: 0.92, USDT: 7.15 },
@@ -524,12 +577,14 @@ function load(){ try{ const r=localStorage.getItem(SK); if(r) S={...S,...JSON.pa
     }
   }catch(e){}
   migrateTrades();
+  migrateInvestCash();
 }
 /* 持仓交易记录：老数据（只有一次买入）自动变成第一条「底仓」记录，不删除任何字段 */
 function ensureTrades(p){
   if(Array.isArray(p.trades)&&p.trades.length) return false;
   const d=p.createdAt?new Date(p.createdAt):new Date();
   const ds=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  if(p._tradeDate) ds=p._tradeDate;
   p.trades=[{id:uid(),side:'base',date:ds,qty:+p.qty||0,price:+p.cost||0,fee:0,ts:p.createdAt||Date.now()}];
   if(p.realizedBase==null) p.realizedBase=+p.realizedPnl||0;
   return true;
@@ -801,6 +856,25 @@ async function refreshQuotes(){
   toast(fail?`成功 ${ok}，失败 ${fail}\n`+fails.slice(0,2).join('\n'):`刷新成功 ${ok} 个`, fail?5000:2500);
 }
 
+function qtyStart(p,ds){
+  ensureTrades(p); let q=0;
+  for(const t of p.trades.slice().sort((a,b)=>String(a.date).localeCompare(String(b.date))||(a.ts||0)-(b.ts||0))){
+    if(String(t.date)>=ds) continue;
+    q+=t.side==='sell'?-(+t.qty||0):(+t.qty||0);
+  }
+  return Math.max(0, Math.round(q*1e8)/1e8);
+}
+function dayFlow(p,ds){
+  ensureTrades(p); let buyCost=0, sellProceeds=0, buyQ=0, sellQ=0;
+  for(const t of p.trades){
+    if(String(t.date)!==ds) continue;
+    const q=+t.qty||0, pr=+t.price||0, f=+t.fee||0;
+    if(t.side==='sell'){ sellQ+=q; sellProceeds+=q*pr-f; }
+    else { buyQ+=q; buyCost+=q*pr+f; }
+  }
+  return {buyCost,sellProceeds,buyQ,sellQ};
+}
+/** 今日盈亏 = 现市值 − 昨收×昨仓 − 今日买入成本 + 今日卖出所得。今天新买的部分按买入价起算，不会用昨收。 */
 function calcPos(p){
   const qty=+p.qty||0, cost=+p.cost||0;
   const has=p.price!=null&&!isNaN(p.price);
@@ -811,8 +885,17 @@ function calcPos(p){
   const realized=+p.realizedPnl||0;
   const cumulative=floating!=null?floating+realized:realized;
   let dayPnl=null;
-  const base=(p.prevClose!=null&&!isNaN(p.prevClose))?+p.prevClose:(p.closePrice!=null?+p.closePrice:null);
-  if(base!=null&&has) dayPnl=qty*(price-base);
+  if(has){
+    const ds=today();
+    const qs=qtyStart(p,ds);
+    const fl=dayFlow(p,ds);
+    const prev=(p.prevClose!=null&&!isNaN(p.prevClose))?+p.prevClose:(p.closePrice!=null&&!isNaN(p.closePrice)?+p.closePrice:null);
+    if(qs>0 && prev==null){
+      if(fl.buyQ||fl.sellQ) dayPnl=value - fl.buyCost + fl.sellProceeds;
+    } else {
+      dayPnl=value - qs*(prev||0) - fl.buyCost + fl.sellProceeds;
+    }
+  }
   return {
     has,value,costTotal,floating,realized,cumulative,dayPnl,
     valueCNY:value!=null?toCNY(value,p.currency):null,
@@ -827,6 +910,7 @@ function calcPos(p){
 function investValue(){
   let v=0, day=0, cum=0, hasD=false;
   for(const p of S.positions){
+    if((+p.qty||0)<=1e-10){ cum+=toCNY(+p.realizedPnl||0,p.currency); continue; }
     const c=calcPos(p);
     v+=c.valueCNY!=null?c.valueCNY:c.costCNY;
     cum+=c.cumulativeCNY;
@@ -842,17 +926,34 @@ function debtValue(){
   return S.debts.reduce((s,d)=>s+(+d.amount||0),0);
 }
 
-/** 将投资市值同步到名为「投资账户」的账户（没有则自动创建） */
-function syncInvestAccount(){
-  const inv=investValue();
+function getInvestAcc(){
   let acc=S.accounts.find(a=>a.type==='invest'||a.name==='投资账户');
   if(!acc){
-    acc={id:uid(),name:'投资账户',type:'invest',balance:inv.value,createdAt:Date.now()};
+    acc={id:uid(),name:'投资账户',type:'invest',balance:0,cashInited:false,createdAt:Date.now()};
     S.accounts.push(acc);
-  } else {
-    acc.balance=Math.round(inv.value*100)/100;
   }
+  return acc;
 }
+/** 旧版把投资账户余额写成市值；迁移后余额=可用资金，未设置则为 0，不瞎编 */
+function migrateInvestCash(){
+  if(!Array.isArray(S.transfers)) S.transfers=[];
+  const acc=S.accounts.find(a=>a.type==='invest'||a.name==='投资账户');
+  if(!acc) return;
+  if(acc.cashInited) return;
+  // 旧数据：余额约等于市值 → 清成 0，等用户自己设
+  acc.balance=0; acc.cashInited=false; acc._migratedFromMv=true;
+}
+function holdingsCostCNY(){
+  return S.positions.reduce((s,p)=>s+toCNY((+p.qty||0)*(+p.cost||0), p.currency),0);
+}
+function applyInvestCash(deltaCNY){
+  const acc=getInvestAcc();
+  acc.balance=Math.round(((+acc.balance||0)+deltaCNY)*100)/100;
+  if(acc.balance<-0.005) toast('可用资金已为负 ¥'+fmt(acc.balance)+'，可转入资金或点「设置可用」');
+}
+function settleBuyCNY(cny){ applyInvestCash(-(+cny||0)); }
+function settleSellCNY(cny){ applyInvestCash(+cny||0); }
+function syncInvestAccount(){ getInvestAcc(); /* 余额不再被市值覆盖 */ }
 
 // ===== 每日收盘自动记录（替代手动「标记收盘」）=====
 // 记录按「交易日」存：例如 30 号 6:00 后打开，会写入 29 号的记录 = 29 号 A股/港股收盘 + 29 号基金净值 + 29 号美股（北京 30 号凌晨收盘）。
@@ -883,7 +984,8 @@ let autoBusy=false;
 async function autoDailyClose(force){
   if(autoBusy||!S.positions.length) return; const now=Date.now();
   const end=addDays(bjDate(now), new Date(now+BJ).getUTCHours()>=6?-1:-2);
-  if(!force && S.autoClose && S.autoClose.end===end && now-S.autoClose.at<30*60e3) return;
+  if(!force && S.autoClose && S.autoClose.end===end && S.autoClose.v===2 && now-S.autoClose.at<30*60e3) return;
+  if(needsHistoryRepair()) force=true;
   autoBusy=true;
   try{
     const autos=S.history.filter(h=>h.auto).map(h=>h.date).sort();
@@ -899,18 +1001,23 @@ async function autoDailyClose(force){
       if(old&&!old.auto) continue; // 保留以前手动标记的记录
       const details=[]; let total=0, value=0, open=false;
       for(const p of S.positions){
-        const m=bars[p.id]; const q=qtyAt(p,T);
-        if(m===undefined){ const od=old&&old.details&&old.details.find(d=>d.id===p.id); if(od){ details.push(od); total+=od.dayPnl||0; value+=od.value||0; open=true; } continue; } // 本次拉取失败：沿用旧明细
-        if(!m||!q) continue;
-        const ds=Object.keys(m).sort(); const i=ds.indexOf(T);
-        const lastI=ds.filter(d=>d<=T).length-1;
-        if(lastI>=0) value+=toCNY(q*m[ds[lastI]],p.currency);
-        if(i<1) continue; open=true;
-        const day=toCNY(q*(m[T]-m[ds[i-1]]),p.currency);
+        const m=bars[p.id];
+        if(m===undefined){ const od=old&&old.details&&old.details.find(d=>d.id===p.id); if(od){ details.push(od); total+=od.dayPnl||0; value+=od.value||0; open=true; } continue; }
+        if(!m) continue;
+        const qs=qtyStart(p,T), qe=qtyAt(p,T), fl=dayFlow(p,T);
+        const ds=Object.keys(m).sort();
+        const hasBar=ds.includes(T);
+        if(!hasBar && !fl.buyQ && !fl.sellQ) continue; // 该市场休市且无成交
+        open=true;
+        const prevD=ds.filter(d=>d<T).pop();
+        const px=hasBar?m[T]:(prevD!=null?m[prevD]:null);
+        if(px!=null && qe>0) value+=toCNY(qe*px,p.currency);
+        if(qs>0 && prevD==null && !fl.buyQ && !fl.sellQ) continue;
+        const day=toCNY((qe*(hasBar?m[T]:0)) - qs*(prevD!=null?m[prevD]:0) - fl.buyCost + fl.sellProceeds, p.currency);
         total+=day;
-        details.push({id:p.id,name:p.name||p.symbol,type:p.type,symbol:p.symbolNorm||p.symbol,dayPnl:day,value:toCNY(q*m[T],p.currency),price:m[T],prev:m[ds[i-1]],qty:q});
+        details.push({id:p.id,name:p.name||p.symbol,type:p.type,symbol:p.symbolNorm||p.symbol,dayPnl:day,value:px!=null&&qe?toCNY(qe*px,p.currency):0,price:hasBar?m[T]:null,prev:prevD!=null?m[prevD]:null,qty:qe,qtyStart:qs});
       }
-      if(!open) continue; // 全部休市（周末/节假日）不写
+      if(!open) continue;
       details.sort((a,b)=>Math.abs(b.dayPnl||0)-Math.abs(a.dayPnl||0));
       const rec={date:T,totalPnl:total,totalValue:value,details,auto:true,updatedAt:now};
       const i=S.history.findIndex(h=>h.date===T);
@@ -919,10 +1026,11 @@ async function autoDailyClose(force){
     }
     S.history.sort((a,b)=>a.date.localeCompare(b.date));
     if(S.history.length>400) S.history=S.history.slice(-400);
-    S.autoClose={end,at:now,failed};
+    S.autoClose={end,at:now,failed,v:2};
     save(); renderAll();
   }finally{ autoBusy=false; renderAutoU(); }
 }
+function needsHistoryRepair(){ return !S.autoClose || S.autoClose.v!==2; }
 function renderAutoU(){ const e=document.getElementById('autoU'); if(!e) return; const a=S.autoClose;
   e.textContent=a?`收盘盈亏已自动记录到 ${a.end}${a.failed?`（${a.failed} 只行情获取失败，下次打开重试）`:''}`:'每天 6:00 后打开会自动记录收盘盈亏'; }
 document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible') autoDailyClose(); });
@@ -931,10 +1039,10 @@ setInterval(()=>autoDailyClose(),10*60e3);
 // ===== Render =====
 function renderAll(){
   syncInvestAccount();
-  const inv=investValue(), cash=cashValue(), debt=debtValue();
-  // 总资产 = 现金类账户 + 投资市值（投资账户已含市值，避免双计：投资账户余额=市值，其他账户是现金）
+  const inv=investValue(), debt=debtValue();
   const otherCash=S.accounts.filter(a=>a.type!=='invest').reduce((s,a)=>s+(+a.balance||0),0);
-  const assets=otherCash+inv.value;
+  const invCash=+getInvestAcc().balance||0;
+  const assets=otherCash+invCash+inv.value;
   const net=assets-debt;
   document.getElementById('netWorth').textContent='¥'+fmt(net);
   document.getElementById('totalAssets').textContent='¥'+fmt(assets);
@@ -948,9 +1056,9 @@ function renderAll(){
 
   document.getElementById('homeStats').innerHTML=`
     <div class="stat-b"><div class="l">现金/银行卡等</div><div class="v">¥${fmt(otherCash)}</div></div>
-    <div class="stat-b"><div class="l">投资市值</div><div class="v">¥${fmt(inv.value)}</div></div>
+    <div class="stat-b"><div class="l">投资（可用+市值）</div><div class="v">¥${fmt(invCash+inv.value)}</div></div>
     <div class="stat-b"><div class="l">待还</div><div class="v" style="color:var(--danger)">¥${fmt(debt)}</div></div>
-    <div class="stat-b"><div class="l">持仓数</div><div class="v">${S.positions.length}</div></div>`;
+    <div class="stat-b"><div class="l">持仓数</div><div class="v">${S.positions.filter(p=>(+p.qty||0)>1e-10).length}</div></div>`;
   // 本月收支
   const ym=today().slice(0,7);
   let minc=0, mexp=0;
@@ -968,8 +1076,7 @@ function renderAll(){
   const ms=document.getElementById('monthStats'); if(ms) ms.innerHTML=monthHtml;
   const ms2=document.getElementById('monthStats2'); if(ms2) ms2.innerHTML=monthHtml;
 
-  // day contrib
-  const items=S.positions.map(p=>{const c=calcPos(p); return {name:p.name,day:c.dayPnlCNY,cum:c.cumulativeCNY};})
+  const items=S.positions.filter(p=>(+p.qty||0)>1e-10).map(p=>{const c=calcPos(p); return {name:p.name,day:c.dayPnlCNY,cum:c.cumulativeCNY};})
     .filter(x=>x.day!=null).sort((a,b)=>Math.abs(b.day)-Math.abs(a.day));
   const box=document.getElementById('dayContrib');
   if(!items.length) box.innerHTML='<div class="empty">刷新行情后显示</div>';
@@ -999,29 +1106,64 @@ function renderAll(){
 
 function renderAccounts(){
   const el=document.getElementById('accList');
-  if(!S.accounts.length){ el.innerHTML='<div class="empty">点击 ＋ 添加银行卡/支付宝等</div>'; return; }
-  el.innerHTML=S.accounts.map(a=>`
-    <div class="item">
+  const inv=getInvestAcc(); const used=holdingsCostCNY(); const avail=+inv.balance||0; const total=avail+used;
+  const mv=investValue().value;
+  const cashBox=document.getElementById('investCashBox');
+  if(cashBox){
+    cashBox.innerHTML=(!inv.cashInited&&!avail?
+      `<div style="color:var(--warning)">可用资金未设置（默认 ¥0）。点右上角「设置可用」填入账户里还能买的钱。</div>`:'')+
+      `<div style="margin-top:4px">投资账户共 <b>¥${fmt(total)}</b>　已使用 <b>¥${fmt(used)}</b>　可用资金 <b style="color:${avail<0?'var(--danger)':'var(--accent)'}">¥${fmt(avail)}</b></div>
+       <div class="hint" style="margin:4px 0 0">持仓市值 ¥${fmt(mv)} · 共有=可用+持仓成本；买入扣可用、卖出加回</div>`;
+  }
+  if(!S.accounts.length){ el.innerHTML='<div class="empty">点击 ＋ 添加银行卡/支付宝等</div>'; }
+  else el.innerHTML=S.accounts.map(a=>{
+    const isInv=a.type==='invest'||a.name==='投资账户';
+    return `<div class="item">
       <div class="item-top">
         <div><div class="item-name">${esc(a.name)}</div>
-          <div class="item-meta"><span class="badge ${a.type}">${{bank:'银行卡',alipay:'支付宝',wechat:'微信',invest:'投资',cash:'现金',other:'其他'}[a.type]||a.type}</span></div>
+          <div class="item-meta"><span class="badge ${a.type}">${{bank:'银行卡',alipay:'支付宝',wechat:'微信',invest:'投资',cash:'现金',other:'其他'}[a.type]||a.type}</span>
+            ${isInv?` · 可用 ¥${fmt(+a.balance||0)} · 已用 ¥${fmt(used)}`:` · 余额`}</div>
         </div>
-        <div class="item-r"><div class="item-v">¥${fmt(+a.balance||0)}</div></div>
+        <div class="item-r"><div class="item-v">¥${fmt(isInv?total:(+a.balance||0))}</div></div>
       </div>
       <div class="btn-row">
+        ${isInv?'<button class="btn-sm warn" onclick="openTransfer()">转入/转出</button><button class="btn-sm pri" onclick="openSetCash()">设置可用</button>':''}
         <button class="btn-sm pri" onclick="editAcc('${a.id}')">编辑</button>
         <button class="btn-sm dan" onclick="delAcc('${a.id}')">删除</button>
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
+  const xl=document.getElementById('xferList');
+  if(xl){
+    const list=(S.transfers||[]).slice().sort((a,b)=>String(b.date).localeCompare(String(a.date))||(b.ts||0)-(a.ts||0)).slice(0,50);
+    xl.innerHTML=list.length?list.map(t=>{
+      const other=S.accounts.find(a=>a.id===t.otherId);
+      return `<div class="item"><div class="item-top"><div class="item-name">${t.dir==='in'?'转入':'转出'} ¥${fmt(t.amount)}</div>
+        <div class="item-meta">${esc(t.date)} · ${t.dir==='in'?'从':'到'} ${esc(other?other.name:t.otherId)}${t.note?' · '+esc(t.note):''}</div></div></div>`;
+    }).join(''):'<div class="empty">暂无划转记录</div>';
+  }
 }
 
+function histStats(p){
+  ensureTrades(p);
+  let buyQ=0, buyAmt=0, sellQ=0, sellAmt=0, firstBuy='', lastSell='';
+  for(const t of p.trades){
+    const q=+t.qty||0, pr=+t.price||0, f=+t.fee||0;
+    if(t.side==='sell'){ sellQ+=q; sellAmt+=q*pr-f; if(!lastSell||t.date>lastSell) lastSell=t.date; }
+    else { buyQ+=q; buyAmt+=q*pr+f; if(!firstBuy||t.date<firstBuy) firstBuy=t.date; }
+  }
+  const avgBuy=buyQ?buyAmt/buyQ:0, avgSell=sellQ?sellAmt/sellQ:0;
+  const real=+p.realizedPnl||0;
+  const pct=buyAmt?real/buyAmt*100:null;
+  return {buyQ,buyAmt,sellQ,sellAmt,avgBuy,avgSell,firstBuy,lastSell,real,pct,realCNY:toCNY(real,p.currency)};
+}
 function renderInvest(){
   const q=(document.getElementById('posQ')?.value||'').toLowerCase();
   const ft=document.getElementById('posType')?.value||'';
   S.positions.forEach(p=>{ if(!Array.isArray(p.trades)||!p.trades.length) recalcPos(p); });
-  let list=S.positions.map(p=>({p,c:calcPos(p)}));
-  if(q) list=list.filter(({p})=> (p.name||'').toLowerCase().includes(q)||(p.symbol||'').toLowerCase().includes(q)||(p.symbolNorm||'').toLowerCase().includes(q));
-  if(ft) list=list.filter(({p})=>p.type===ft);
+  const match=p=> (!q || (p.name||'').toLowerCase().includes(q)||(p.symbol||'').toLowerCase().includes(q)||(p.symbolNorm||'').toLowerCase().includes(q))
+    && (!ft || p.type===ft);
+  let list=S.positions.filter(p=>(+p.qty||0)>1e-10 && match(p)).map(p=>({p,c:calcPos(p)}));
   document.getElementById('posCnt').textContent=list.length+' 个';
   const el=document.getElementById('posList');
   if(!list.length){ el.innerHTML='<div class="empty">暂无持仓</div>'; }
@@ -1048,6 +1190,7 @@ function renderInvest(){
         <div class="btn-row">
           <button class="btn-sm pri" onclick="openTrade('${p.id}','buy')">加仓</button>
           <button class="btn-sm warn" onclick="openTrade('${p.id}','sell')">减仓</button>
+          <button class="btn-sm dan" onclick="openTrade('${p.id}','clear')">清仓</button>
           <button class="btn-sm" onclick="openPrice('${p.id}')">改价</button>
           <button class="btn-sm" onclick="editPos('${p.id}')">编辑</button>
           <button class="btn-sm dan" onclick="delPos('${p.id}')">删除</button>
@@ -1056,7 +1199,31 @@ function renderInvest(){
       </div>`;
     }).join('');
   }
-  // dca
+  let hist=S.positions.filter(p=>(+p.qty||0)<=1e-10 && match(p)).map(p=>({p,h:histStats(p)}));
+  hist.sort((a,b)=>b.h.realCNY-a.h.realCNY);
+  const hc=document.getElementById('histCnt'); if(hc) hc.textContent=hist.length+' 个';
+  const hl=document.getElementById('histList');
+  if(hl){
+    if(!hist.length) hl.innerHTML='<div class="empty">清仓后的股票/基金/加密会出现在这里</div>';
+    else hl.innerHTML=hist.map(({p,h})=>`<div class="item">
+      <div class="item-top">
+        <div><div class="item-name">${esc(p.name)}</div>
+          <div class="item-meta"><span class="badge ${p.type}">${{stock:'股票',fund:'基金',crypto:'加密',other:'其他'}[p.type]}</span> ${esc(p.symbolNorm||p.symbol||'')}</div>
+        </div>
+        <div class="item-r">
+          <div class="item-pnl ${h.realCNY>=0?'up':'down'}">${fmtP(h.realCNY)}</div>
+          <div class="item-meta">${h.pct!=null?(h.pct>=0?'+':'')+fmt(h.pct,2)+'%':''}</div>
+        </div>
+      </div>
+      <div class="item-meta">买入 ${fmt(h.buyQ,4)} · 均价 ${fmt(h.avgBuy,4)} · ${esc(h.firstBuy||'-')}
+        ${h.sellQ?` → 卖出 ${fmt(h.sellQ,4)} · 均价 ${fmt(h.avgSell,4)} · ${esc(h.lastSell||'-')}`:''}</div>
+      <div class="btn-row">
+        <button class="btn-sm" onclick="editPos('${p.id}')">编辑</button>
+        <button class="btn-sm dan" onclick="delPos('${p.id}')">删除</button>
+      </div>
+      ${tradeHist(p)}
+    </div>`).join('');
+  }
   const dl=document.getElementById('dcaList');
   if(!S.dca.length) dl.innerHTML='<div class="empty">暂无定投计划</div>';
   else dl.innerHTML=S.dca.map(d=>{
@@ -1137,7 +1304,7 @@ function showDay(ds){
   let h=S.history.find(x=>x.date===ds);
   // 若是今天且无明细，用实时持仓日盈亏生成
   if((!h||!h.details||!h.details.length) && ds===today()){
-    const details=S.positions.map(p=>{
+    const details=S.positions.filter(p=>(+p.qty||0)>1e-10).map(p=>{
       const c=calcPos(p);
       return {name:p.name||p.symbol,type:p.type,dayPnl:c.dayPnlCNY,value:c.valueCNY,floating:c.floatingCNY,cumulative:c.cumulativeCNY};
     }).filter(d=>d.dayPnl!=null).sort((a,b)=>Math.abs(b.dayPnl)-Math.abs(a.dayPnl));
@@ -1185,9 +1352,29 @@ function saveAcc(){
   const id=document.getElementById('accId').value;
   const data={name:document.getElementById('accName').value.trim(),type:document.getElementById('accType').value,balance:+document.getElementById('accBal').value||0};
   if(!data.name) return toast('请填名称');
+  if(data.type==='invest') data.cashInited=true;
   if(id){ const i=S.accounts.findIndex(a=>a.id===id); if(i>=0) S.accounts[i]={...S.accounts[i],...data}; }
   else S.accounts.push({id:uid(),...data,createdAt:Date.now()});
   save(); closeM('accModal'); renderAll(); toast('已保存');
+}
+function openSetCash(){ const a=getInvestAcc(); document.getElementById('cashVal').value=a.cashInited||a.balance?a.balance:''; openM('cashModal'); }
+function saveSetCash(){ const a=getInvestAcc(); a.balance=+document.getElementById('cashVal').value||0; a.cashInited=true; save(); closeM('cashModal'); renderAll(); toast('可用资金已设为 ¥'+fmt(a.balance)); }
+function fillXferSelects(){
+  const sel=document.getElementById('xferAcc');
+  const others=S.accounts.filter(a=>a.type!=='invest'&&a.name!=='投资账户');
+  sel.innerHTML=others.map(a=>`<option value="${a.id}">${esc(a.name)}（¥${fmt(+a.balance||0)}）</option>`).join('')||'<option value="">请先添加其他账户</option>';
+}
+function openTransfer(){ fillXferSelects(); document.getElementById('xferDir').value='in'; document.getElementById('xferAmt').value=''; document.getElementById('xferNote').value=''; document.getElementById('xferDate').value=today(); openM('xferModal'); }
+function saveTransfer(){
+  const dir=document.getElementById('xferDir').value, otherId=document.getElementById('xferAcc').value, amt=+document.getElementById('xferAmt').value, date=document.getElementById('xferDate').value||today(), note=document.getElementById('xferNote').value.trim();
+  if(!otherId) return toast('请选择对方账户');
+  if(!(amt>0)) return toast('请填金额');
+  const inv=getInvestAcc(), other=S.accounts.find(a=>a.id===otherId); if(!other) return;
+  if(dir==='in'){ other.balance=(+other.balance||0)-amt; applyInvestCash(amt); inv.cashInited=true; }
+  else { applyInvestCash(-amt); inv.cashInited=true; other.balance=(+other.balance||0)+amt; }
+  S.transfers=S.transfers||[];
+  S.transfers.push({id:uid(),dir,otherId,amount:amt,date,note,ts:Date.now()});
+  save(); closeM('xferModal'); renderAll(); toast(dir==='in'?'已转入投资账户':'已转出投资账户');
 }
 function delAcc(id){ if(!confirm('删除账户？'))return; S.accounts=S.accounts.filter(a=>a.id!==id); save(); renderAll(); }
 
@@ -1225,7 +1412,15 @@ function savePos(){
       else { o.trades[0].qty=data.qty; o.trades[0].price=data.cost; }
       o.realizedBase=data.realizedPnl-sellReal;
       S.positions[i]={...o,...data}; recalcPos(S.positions[i]); } }
-  else { const np={id:uid(),...data,createdAt:Date.now()}; ensureTrades(np); S.positions.push(np); }
+  else {
+    const np={id:uid(),...data,createdAt:Date.now()};
+    // 底仓日期用今天，避免「今日盈亏」误用昨收
+    np._tradeDate=today();
+    ensureTrades(np);
+    np.trades[0].date=today();
+    settleBuyCNY(toCNY((+data.qty||0)*(+data.cost||0), data.currency));
+    S.positions.push(np);
+  }
   syncInvestAccount(); save(); closeM('posModal'); renderAll(); toast('已保存 · '+data.symbolNorm);
 }
 const SIDE_N={base:'底仓',buy:'加仓',sell:'减仓'};
@@ -1238,23 +1433,29 @@ function tradeHist(p){
   return `<details class="trade-hist" style="margin-top:6px"><summary class="item-meta" style="cursor:pointer">交易记录（${tr.length} 笔）· 持仓 ${fmt(p.qty,4)} · 均价 ${fmt(p.cost,4)} · 总成本 ${fmt((+p.qty||0)*(+p.cost||0))}</summary>${rows}</details>`;
 }
 function openTrade(id,side){ const p=S.positions.find(x=>x.id===id); if(!p)return; ensureTrades(p);
+  const clear=side==='clear'; if(clear) side='sell';
   document.getElementById('tPos').value=id; document.getElementById('tSide').value=side;
-  document.getElementById('tTitle').textContent=(side==='sell'?'减仓 · ':'加仓 · ')+p.name;
+  document.getElementById('tTitle').textContent=(clear?'清仓 · ':side==='sell'?'减仓 · ':'加仓 · ')+p.name;
   document.getElementById('tPriceLab').textContent=side==='sell'?'卖出价':'买入价';
   document.getElementById('tNow').textContent=`当前持仓 ${fmt(p.qty,4)} · 均价 ${fmt(p.cost,4)} ${p.currency||''}`;
-  document.getElementById('tDate').value=today(); ['tQty','tFee','tNote'].forEach(i=>document.getElementById(i).value='');
-  document.getElementById('tPrice').value=p.price??''; tradePreview(); openM('tradeModal'); }
+  document.getElementById('tDate').value=today(); document.getElementById('tFee').value=''; document.getElementById('tNote').value=clear?'清仓':'';
+  document.getElementById('tQty').value=clear?(p.qty??''):'';
+  document.getElementById('tPrice').value=p.price??p.cost??''; tradePreview(); openM('tradeModal'); }
 function tradeDraft(){ const p=S.positions.find(x=>x.id===document.getElementById('tPos').value); if(!p) return null;
   const side=document.getElementById('tSide').value, qty=+document.getElementById('tQty').value, price=+document.getElementById('tPrice').value, fee=+document.getElementById('tFee').value||0;
   return {p,t:{id:uid(),side,date:document.getElementById('tDate').value||today(),qty,price,fee,note:document.getElementById('tNote').value.trim(),ts:Date.now()}}; }
 function tradePreview(){ const d=tradeDraft(), el=document.getElementById('tPrev'); if(!d||!(d.t.qty>0)||!(d.t.price>0)){ el.textContent=''; return; }
   const c=JSON.parse(JSON.stringify(d.p)); c.trades.push(d.t); recalcPos(c);
-  el.textContent=d.t.side==='sell'?`减仓后：剩 ${fmt(c.qty,4)} · 均价 ${fmt(c.cost,4)} · 本笔实现盈亏 ${fmtP(c.trades.find(x=>x.id===d.t.id).pnl)}`:`加仓后：共 ${fmt(c.qty,4)} · 均价 ${fmt(c.cost,4)} · 总成本 ${fmt(c.qty*c.cost)}`; }
+  const cash=toCNY(d.t.qty*d.t.price+(d.t.side==='sell'?-1:1)*(+d.t.fee||0), d.p.currency);
+  el.textContent=(d.t.side==='sell'?`卖出后：剩 ${fmt(c.qty,4)} · 均价 ${fmt(c.cost,4)} · 本笔实现 ${fmtP(c.trades.find(x=>x.id===d.t.id).pnl)} · 回笼约 ¥${fmt(cash)}`:`加仓后：共 ${fmt(c.qty,4)} · 均价 ${fmt(c.cost,4)} · 扣可用约 ¥${fmt(cash)}`); }
 function saveTrade(){ const d=tradeDraft(); if(!d) return; const {p,t}=d;
   if(!(t.qty>0)||!(t.price>0)) return toast('请填数量和价格');
   if(t.side==='sell'&&t.qty>(+p.qty||0)+1e-9) return toast('减仓数量不能超过当前持仓 '+fmt(p.qty,4));
-  p.trades.push(t); recalcPos(p); syncInvestAccount(); save(); closeM('tradeModal'); renderAll();
-  toast(t.side==='sell'?'已减仓':'已加仓 · 均价 '+fmt(p.cost,4)); }
+  p.trades.push(t); recalcPos(p);
+  const cash=toCNY(t.qty*t.price, p.currency); const fee=toCNY(+t.fee||0, p.currency);
+  if(t.side==='sell') settleSellCNY(cash-fee); else settleBuyCNY(cash+fee);
+  syncInvestAccount(); save(); closeM('tradeModal'); renderAll();
+  toast(t.side==='sell'?((+p.qty||0)<=1e-10?'已清仓，移入历史持仓':'已减仓'):'已加仓 · 均价 '+fmt(p.cost,4)); }
 function delTrade(pid,tid){ const p=S.positions.find(x=>x.id===pid); if(!p||!confirm('删除这笔记录？'))return;
   p.trades=p.trades.filter(t=>t.id!==tid||t.side==='base'); recalcPos(p); syncInvestAccount(); save(); renderAll(); }
 function delPos(id){ if(!confirm('删除持仓？'))return; S.positions=S.positions.filter(p=>p.id!==id); syncInvestAccount(); save(); renderAll(); }
@@ -1277,13 +1478,14 @@ function runDca(id){
   const d=S.dca.find(x=>x.id===id); if(!d)return;
   const pos=S.positions.find(p=>p.id===d.posId); if(!pos) return toast('持仓不存在');
   const acc=S.accounts.find(a=>a.id===d.accId);
-  if(acc){ if((+acc.balance||0)<d.amount) return toast('账户余额不足'); acc.balance=(+acc.balance||0)-d.amount; }
+  const inv=getInvestAcc();
+  if(acc && acc.id!==inv.id){ if((+acc.balance||0)<d.amount) return toast('账户余额不足'); acc.balance=(+acc.balance||0)-d.amount; applyInvestCash(d.amount); inv.cashInited=true; }
   const price=+pos.price||+pos.cost||1;
   const addQty=d.amount/price;
-  const oldQty=+pos.qty||0, oldCost=+pos.cost||0;
-  const newQty=oldQty+addQty;
-  pos.qty=newQty;
-  pos.cost=newQty>0?(oldQty*oldCost+d.amount)/newQty:price;
+  ensureTrades(pos);
+  pos.trades.push({id:uid(),side:'buy',date:today(),qty:addQty,price:price,fee:0,note:'定投',ts:Date.now()});
+  recalcPos(pos);
+  settleBuyCNY(d.amount);
   // 推进下次日期
   const n=new Date((d.nextDate||today())+'T12:00:00');
   if(d.cycle==='daily') n.setDate(n.getDate()+1);
@@ -1347,7 +1549,7 @@ function importAll(ev){
   r.readAsText(f); ev.target.value='';
 }
 function clearAll(){ if(!confirm('确定清空全部数据？'))return;
-  S={accounts:[],ledger:[],positions:[],history:[],dca:[],debts:[],rates:S.rates,lastRefresh:null}; save(); renderAll(); toast('已清空'); }
+  S={accounts:[],ledger:[],positions:[],history:[],transfers:[],dca:[],debts:[],rates:S.rates,lastRefresh:null}; save(); renderAll(); toast('已清空'); }
 
 // ===== 快捷记账 =====
 // sync.js 调用：把条目并入账本（按 qid 去重），返回新增记录
