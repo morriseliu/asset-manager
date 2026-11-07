@@ -1008,16 +1008,20 @@ async function fetchBars(p){ // 返回 {日期: 收盘价/净值}
 /** 单只持仓某日的日盈亏（收盘记录用，与 calcPos 同口径）：
  *  期末市值 − 期初市值 − 当天买入成本 + 当天卖出所得。
  *  休市日（hasBar 为假）买入成本不计：当天没行情，买入不能算成一笔 −buyCost 的亏损。
+ *  休市日且有昨收时只计卖出的实现部分（卖出所得 − 卖出份数×昨收），买入不贡献；
+ *  否则旧仓整个市值会被当成亏损扣掉（周六买 10 股会算出 −6560 的假亏损）。无昨收时保持原行为。
  *  基金当天生效的买入还是待确认的：期末数量去掉这部分，买入成本也不扣（执行价就是当天净值）。 */
 function closeDay(qe, qs, prevPx, hasBar, px, fl, type){
   const qc=qe - (type==='fund' ? fl.buyQ : 0);
   const buyCostEff=(type==='fund' ? 0 : fl.buyCost);
+  if(!hasBar && prevPx!=null) return fl.sellProceeds - fl.sellQ*prevPx;
   return (qc*(hasBar?px:0)) - qs*(prevPx!=null?prevPx:0) - (hasBar?buyCostEff:0) + fl.sellProceeds;
 }
 let autoBusy=false;
 async function autoDailyClose(force){
   if(autoBusy||!S.positions.length) return; const now=Date.now();
-  const end=addDays(bjDate(now), new Date(now+BJ).getUTCHours()>=6?-1:-2);
+  const bjH=new Date(now+BJ).getUTCHours();
+  const end=addDays(bjDate(now), bjH>=23?0:bjH>=6?-1:-2); // 基金净值最迟当天 23:00 前出：23:00 后打开，当天就能记
   if(!force && S.autoClose && S.autoClose.end===end && S.autoClose.v===2 && now-S.autoClose.at<30*60e3) return;
   if(needsHistoryRepair()) force=true;
   autoBusy=true;
@@ -1066,7 +1070,7 @@ async function autoDailyClose(force){
 }
 function needsHistoryRepair(){ return !S.autoClose || S.autoClose.v!==2; }
 function renderAutoU(){ const e=document.getElementById('autoU'); if(!e) return; const a=S.autoClose;
-  e.textContent=a?`收盘盈亏已自动记录到 ${a.end}${a.failed?`（${a.failed} 只行情获取失败，下次打开重试）`:''}`:'每天 6:00 后打开会自动记录收盘盈亏'; }
+  e.textContent=a?`收盘盈亏已自动记录到 ${a.end}${a.failed?`（${a.failed} 只行情获取失败，下次打开重试）`:''}`:'每天 6:00 后打开自动记录收盘盈亏；23:00 后打开可记当天'; }
 // 汇率显示：值 + 更新时间 + 来源；从未拉到过时只显示初始值并注明未记录更新时间
 function renderRates(){
   const e=document.getElementById('rateU'); if(!e) return;
