@@ -198,6 +198,7 @@
       <button class="btn btn-p" id="btnRef" onclick="refreshQuotes()"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg><span>刷新行情</span></button>
     </div>
     <div class="last-u" id="lastU">尚未刷新</div>
+    <div class="last-u" id="rateU"></div>
     <div class="last-u" id="autoU"></div>
     <div class="card">
       <div class="card-t">资产结构</div>
@@ -439,7 +440,7 @@
     <div class="form-g"><label>名称</label><input class="form-c" id="pName" required></div>
     <div class="form-r">
       <div class="form-g"><label>类型</label>
-        <select class="form-c" id="pType"><option value="stock">股票</option><option value="fund">基金</option><option value="crypto">加密</option><option value="other">其他</option></select>
+        <select class="form-c" id="pType" onchange="syncCutoffUI()"><option value="stock">股票</option><option value="fund">基金</option><option value="crypto">加密</option><option value="other">其他</option></select>
       </div>
       <div class="form-g" style="position:relative">
         <label>代码（可搜索）</label>
@@ -452,6 +453,13 @@
       <div class="form-g"><label>成本价</label><input class="form-c" id="pCost" type="number" step="any" required></div>
     </div>
     <div class="form-g"><label>现价（可空）</label><input class="form-c" id="pPrice" type="number" step="any"></div>
+    <div class="form-g" id="pCutoffRow" style="display:none"><label>买入时间（15:00 为界，仅基金）</label>
+      <div style="display:flex;gap:8px">
+        <button type="button" class="btn-sm pri" id="pCutoffBefore" onclick="setCutoff('pos',false)">15:00 前买入</button>
+        <button type="button" class="btn-sm" id="pCutoffAfter" onclick="setCutoff('pos',true)">15:00 后买入</button>
+      </div>
+      <div class="hint" id="pCutoffHint" style="margin-top:6px"></div>
+    </div>
     <div class="form-g"><label>平台</label><input class="form-c" id="pPlat" placeholder="老虎 / 雪球 / 天天基金"></div>
     <div class="form-g"><label>已实现盈亏</label><input class="form-c" id="pReal" type="number" step="any" value="0"></div>
     <p class="hint">股票填 AAPL/600519；基金填 6 位代码如 005273；加密填 bitcoin/ETH</p>
@@ -466,8 +474,15 @@
     <input type="hidden" id="tPos"><input type="hidden" id="tSide">
     <div class="hint" id="tNow" style="margin-bottom:10px"></div>
     <div class="form-r">
-      <div class="form-g"><label>日期</label><input class="form-c" id="tDate" type="date"></div>
+      <div class="form-g"><label>日期</label><input class="form-c" id="tDate" type="date" onchange="onTradeDateChange()"></div>
       <div class="form-g"><label>手续费（可空）</label><input class="form-c" id="tFee" type="number" step="any" placeholder="0" oninput="tradePreview()"></div>
+    </div>
+    <div class="form-g" id="tCutoffRow" style="display:none"><label>交易时间（15:00 为界，仅基金）</label>
+      <div style="display:flex;gap:8px">
+        <button type="button" class="btn-sm pri" id="tCutoffBefore" onclick="setCutoff('trade',false)">15:00 前</button>
+        <button type="button" class="btn-sm" id="tCutoffAfter" onclick="setCutoff('trade',true)">15:00 后</button>
+      </div>
+      <div class="hint" id="tCutoffHint" style="margin-top:6px"></div>
     </div>
     <div class="form-r">
       <div class="form-g"><label>数量/份额</label><input class="form-c" id="tQty" type="number" step="any" oninput="tradePreview()"></div>
@@ -538,7 +553,7 @@ let S = {
   transfers: [],
   dca: [],
   debts: [],
-  rates: { USD: 7.15, HKD: 0.92, USDT: 7.15 },
+  rates: { USD: 7.15, HKD: 0.92, USDT: 7.15, updatedAt: null, source: '' }, // 7.15/0.92 只是从未拉到过汇率时的兜底；正常每次刷新行情、打开页面时都会从网上拉实时汇率
   lastRefresh: null
 };
 let calY, calM, calSel = null;
@@ -817,12 +832,45 @@ async function fetchCrypto(id){
   }
   throw new Error(errs.slice(0,4).join('|')||'加密行情失败');
 }
+// ===== 实时汇率：与小程序「持仓记」同款三源链 =====
+// 按顺序尝试三个源，第一个成功的就用；全部失败返回 {ok:false}，保留上次汇率。
+// 注意：这三个源都是每天更新一次的参考价（不是外汇盘中逐笔价），
+// 但比写死的 7.15/0.92 实时得多；每次刷新行情、打开页面时都会重新拉。
+const RATE_SOURCES=[
+  {id:'er-api',name:'exchangerate-api',url:'https://open.er-api.com/v6/latest/USD'},
+  {id:'frankfurter',name:'Frankfurter（欧洲央行参考价）',url:'https://api.frankfurter.dev/v1/latest?base=USD&symbols=CNY,HKD'},
+  {id:'currency-api',name:'currency-api',url:'https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/usd.json'}
+];
+const RATE_PARSERS={
+  'er-api':d=>{ const r=d&&d.rates; if(!r||!r.CNY||!r.HKD) throw new Error('汇率数据为空'); return {USD:+r.CNY,HKD:+r.CNY/+r.HKD}; },
+  'frankfurter':d=>{ const r=d&&d.rates; if(!r||!r.CNY||!r.HKD) throw new Error('汇率数据为空'); return {USD:+r.CNY,HKD:+r.CNY/+r.HKD}; },
+  'currency-api':d=>{ const u=d&&d.usd; if(!u||!u.cny) throw new Error('汇率数据为空'); return {USD:+u.cny,HKD:u.hkd?+u.cny/+u.hkd:0.92}; }
+};
+/** 把一次拉到的汇率写进 S.rates（连同更新时间和来源）；USDT 与 USD 同价 */
+function applyRates(fresh,sourceName){
+  S.rates.USD=fresh.USD; S.rates.USDT=fresh.USD; S.rates.HKD=fresh.HKD;
+  S.rates.updatedAt=Date.now(); S.rates.source=sourceName;
+  return S.rates;
+}
+function rateTimeStr(ts){
+  if(!ts) return '未更新';
+  const d=new Date(ts), p=n=>String(n).padStart(2,'0');
+  return p(d.getMonth()+1)+'-'+p(d.getDate())+' '+p(d.getHours())+':'+p(d.getMinutes());
+}
+function fmtRate(n){ return n==null||isNaN(n)?'--':Number(n).toFixed(4); }
 async function fetchRates(){
-  try{
-    const res=await fetch('https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/usd.json',{cache:'no-store'});
-    const d=await res.json();
-    if(d.usd?.cny){ S.rates.USD=d.usd.cny; S.rates.USDT=d.usd.cny; if(d.usd.hkd) S.rates.HKD=d.usd.cny/d.usd.hkd; }
-  }catch(e){}
+  const errs=[];
+  for(const src of RATE_SOURCES){
+    try{
+      const res=await fetch(src.url,{cache:'no-store'});
+      const d=await res.json();
+      const fresh=RATE_PARSERS[src.id](d);
+      if(!fresh.USD||fresh.USD<=0||!fresh.HKD||fresh.HKD<=0) throw new Error('汇率无效');
+      applyRates(fresh,src.name);
+      return {ok:true,source:src.name};
+    }catch(e){ errs.push(src.name+'：'+((e&&e.message)||'失败')); }
+  }
+  return {ok:false,error:errs.join('；')||'汇率拉取失败'};
 }
 
 async function updateOne(p){
@@ -859,7 +907,7 @@ async function updateOne(p){
 async function refreshQuotes(){
   const btn=document.getElementById('btnRef');
   btn.disabled=true; btn.querySelector('span').textContent='刷新中…';
-  await fetchRates();
+  const fr=await fetchRates(); // 汇率失败不阻塞行情：用上次拉到的值继续算，只提示
   let ok=0,fail=0; const fails=[];
   for(const p of S.positions){
     const r=await updateOne(p);
@@ -869,13 +917,36 @@ async function refreshQuotes(){
   syncInvestAccount();
   save(); renderAll();
   btn.disabled=false; btn.querySelector('span').textContent='刷新行情';
-  toast(fail?`成功 ${ok}，失败 ${fail}\n`+fails.slice(0,2).join('\n'):`刷新成功 ${ok} 个`, fail?5000:2500);
+  const rateNote=fr.ok?'':'\n汇率拉取失败，用上次汇率';
+  toast((fail?`成功 ${ok}，失败 ${fail}\n`+fails.slice(0,2).join('\n'):`刷新成功 ${ok} 个`)+rateNote, (fail||!fr.ok)?5000:2500);
 }
+
+// ===== 中国场外基金 15:00 规则（证监会口径）=====
+// 交易日 15:00 前提交的基金申购/赎回按当天净值成交；15:00（含）之后或非交易日提交的，
+// 按下一个交易日净值成交；份额一般 T+1 确认，确认日起开始算盈亏。
+// 只跳过周六日；法定节假日未接交易日历，节假日的生效日以基金公司确认为准。
+// 股票/加密/其他不适用这条规则（股票按交易日收盘价，当天买入当天不算盈亏即可）。
+function isTradingDay(ds){ const d=new Date(ds+'T00:00:00'); if(isNaN(d.getTime())) return false; const w=d.getDay(); return w>=1&&w<=5; }
+function nextTradingDay(ds){ let d=addDays(ds,1); while(!isTradingDay(d)) d=addDays(d,1); return d; }
+function weekdayStr(ds){ const d=new Date(ds+'T00:00:00'); return ['周日','周一','周二','周三','周四','周五','周六'][d.getDay()]||''; }
+/** 成交净值日（生效日）：基金在交易日 15:00 前提交 → 当天；15:00 后或非交易日 → 下一个交易日。
+ *  股票等直接返回交易日期；老数据没有 afterCutoff 时按 15:00 前算，与旧行为一致。 */
+function effDateOf(t,type){ const date=String((t&&t.date)||''); if(!date) return ''; if(type!=='fund') return date; if(isTradingDay(date)&&!(t&&t.afterCutoff)) return date; return nextTradingDay(date); }
+/** 份额确认日：生效日的下一个交易日（T+1 确认） */
+function confirmDateOf(t,type){ const e=effDateOf(t,type); return e?nextTradingDay(e):''; }
+/** 当前时间是否已过 15:00（含 15:00 整） */
+function isAfterCutoffNow(){ return new Date().getHours()>=15; }
+/** 待确认份额（仅基金）：已买入但确认日还没到的净份额；返回 {qty, confirmDate} */
+function pendingInfo(p,ds){ const d=ds||today(); if(!p||p.type!=='fund'||!Array.isArray(p.trades)||!p.trades.length) return {qty:0,confirmDate:''}; let confirmed=0,confirmDate=''; for(const t of p.trades){ const q=+t.qty||0; const c=confirmDateOf(t,'fund'); if(c&&c<=d) confirmed+=t.side==='sell'?-q:q; else if(t.side!=='sell'&&c){ if(!confirmDate||c<confirmDate) confirmDate=c; } } const qty=Math.max(0,Math.round(((+p.qty||0)-confirmed)*1e8)/1e8); return {qty,confirmDate:qty>0?confirmDate:''}; }
+/** 按生效日算的当日收盘后数量：生效日不晚于当天的买卖轧差。
+ *  今日盈亏公式里要用它而不用 p.qty：15:00 后卖出的份额当天收盘时还在账上，
+ *  直接用 p.qty 会把卖出部分当天涨跌算丢（周一 15 点后卖出，周一今日盈亏应为 50）。 */
+function qtyEOD(p,ds){ ensureTrades(p); let q=0; for(const t of p.trades){ if(String(effDateOf(t,p.type))>ds) continue; q+=t.side==='sell'?-(+t.qty||0):(+t.qty||0); } return Math.max(0,Math.round(q*1e8)/1e8); }
 
 function qtyStart(p,ds){
   ensureTrades(p); let q=0;
-  for(const t of p.trades.slice().sort((a,b)=>String(a.date).localeCompare(String(b.date))||(a.ts||0)-(b.ts||0))){
-    if(String(t.date)>=ds) continue;
+  for(const t of p.trades.slice().sort((a,b)=>String(effDateOf(a,p.type)).localeCompare(String(effDateOf(b,p.type)))||(a.ts||0)-(b.ts||0))){
+    if(String(effDateOf(t,p.type))>=ds) continue;
     q+=t.side==='sell'?-(+t.qty||0):(+t.qty||0);
   }
   return Math.max(0, Math.round(q*1e8)/1e8);
@@ -883,7 +954,7 @@ function qtyStart(p,ds){
 function dayFlow(p,ds){
   ensureTrades(p); let buyCost=0, sellProceeds=0, buyQ=0, sellQ=0;
   for(const t of p.trades){
-    if(String(t.date)!==ds) continue;
+    if(String(effDateOf(t,p.type))!==ds) continue;
     const q=+t.qty||0, pr=+t.price||0, f=+t.fee||0;
     if(t.side==='sell'){ sellQ+=q; sellProceeds+=q*pr-f; }
     else { buyQ+=q; buyCost+=q*pr+f; }
@@ -891,7 +962,10 @@ function dayFlow(p,ds){
   return {buyCost,sellProceeds,buyQ,sellQ};
 }
 /** 今日盈亏：只算昨天就有的持仓和今天的卖出。
-  * 今天新买的不算（按买入价起算，从明天开始算）；今天该市场没开盘（行情日期不是今天），今日盈亏记 0，不把上一交易日的涨跌算到今天。 */
+  * 今天新买的不算（按买入价起算，从明天开始算）；今天该市场没开盘（行情日期不是今天），今日盈亏记 0，不把上一交易日的涨跌算到今天。
+  * 基金按 15:00 规则算生效日：15:00 后买入的份数第二天不算盈亏（生效日是第二天），第三天才开始算；
+  * 15:00 后卖出的，卖出所得算在生效日那天；周末提交的顺延到周一。公式里用 qtyEOD（按生效日算的当日收盘后数量）而不用 p.qty，
+  * 否则 15:00 后卖出的份额当天收盘还在账上，卖出部分当天涨跌会被算丢。 */
 function calcPos(p){
   const qty=+p.qty||0, cost=+p.cost||0;
   const has=p.price!=null&&!isNaN(p.price);
@@ -906,19 +980,22 @@ function calcPos(p){
     const ds=today();
     const qs=qtyStart(p,ds);
     const fl=dayFlow(p,ds);
+    const qe=qtyEOD(p,ds);
     const prev=(p.prevClose!=null&&!isNaN(p.prevClose))?+p.prevClose:(p.closePrice!=null&&!isNaN(p.closePrice)?+p.closePrice:null);
     if(p.quoteDate && p.quoteDate!==ds){
       dayPnl=0; // 行情是上一交易日的，今天没开盘
     } else if(qs===0 && !fl.buyQ && !fl.sellQ){
       dayPnl=null; // 今天之前没持仓、今天也没买卖，没法算
     } else if(qs>0 && prev==null){
-      if(fl.buyQ||fl.sellQ) dayPnl=value - fl.buyQ*price + fl.sellProceeds;
+      if(fl.buyQ||fl.sellQ) dayPnl=qe*price - fl.buyQ*price + fl.sellProceeds;
     } else {
-      dayPnl=value - fl.buyQ*price - qs*(prev||0) + fl.sellProceeds;
+      dayPnl=qe*price - fl.buyQ*price - qs*(prev||0) + fl.sellProceeds;
     }
   }
+  const pend=pendingInfo(p);
   return {
     has,value,costTotal,floating,realized,cumulative,dayPnl,
+    pendingQty:pend.qty,pendingConfirmDate:pend.confirmDate,
     valueCNY:value!=null?toCNY(value,p.currency):null,
     costCNY:toCNY(costTotal,p.currency),
     floatingCNY:floating!=null?toCNY(floating,p.currency):null,
@@ -982,8 +1059,8 @@ function syncInvestAccount(){ getInvestAcc(); /* 余额不再被市值覆盖 */ 
 const BJ=8*3600e3;
 function bjDate(ms){ return new Date(ms+BJ).toISOString().slice(0,10); }
 function addDays(ds,n){ return new Date(Date.parse(ds+'T00:00:00Z')+n*864e5).toISOString().slice(0,10); }
-function qtyAt(p,ds){ ensureTrades(p); let q=0;
-  for(const t of p.trades.slice().sort((a,b)=>String(a.date).localeCompare(String(b.date)))){ if(t.side!=='base'&&String(t.date)>ds) continue; if(t.side==='base'&&String(t.date)>ds) continue; q+=t.side==='sell'?-(+t.qty||0):(+t.qty||0); }
+function qtyAt(p,ds){ ensureTrades(p); let q=0; // 收盘后数量：按生效日算，与 qtyEOD 一致（每日收盘记录与今日盈亏同口径）
+  for(const t of p.trades){ if(String(effDateOf(t,p.type))>ds) continue; q+=t.side==='sell'?-(+t.qty||0):(+t.qty||0); }
   return Math.max(0,q); }
 async function fetchBars(p){ // 返回 {日期: 收盘价/净值}
   const code=p.symbolNorm||normSym(p.symbol,p.type); if(!code) return null;
@@ -1054,6 +1131,12 @@ async function autoDailyClose(force){
 function needsHistoryRepair(){ return !S.autoClose || S.autoClose.v!==2; }
 function renderAutoU(){ const e=document.getElementById('autoU'); if(!e) return; const a=S.autoClose;
   e.textContent=a?`收盘盈亏已自动记录到 ${a.end}${a.failed?`（${a.failed} 只行情获取失败，下次打开重试）`:''}`:'每天 6:00 后打开会自动记录收盘盈亏'; }
+// 汇率显示：值 + 更新时间 + 来源；从未拉到过时只显示初始值并注明未记录更新时间
+function renderRates(){
+  const e=document.getElementById('rateU'); if(!e) return;
+  const r=S.rates||{};
+  e.textContent=`汇率 USD ${fmtRate(r.USD)} · HKD ${fmtRate(r.HKD)}（${r.updatedAt?rateTimeStr(r.updatedAt)+(r.source?' · '+r.source:''):'未记录更新时间'}）`;
+}
 document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible') autoDailyClose(); });
 setInterval(()=>autoDailyClose(),10*60e3);
 
@@ -1074,6 +1157,7 @@ function renderAll(){
   const ip=document.getElementById('investPnl');
   ip.textContent=fmtP(inv.cum); ip.className='sum-v sm '+(inv.cum>=0?'up':'down');
   document.getElementById('lastU').textContent=S.lastRefresh?'上次刷新：'+new Date(S.lastRefresh).toLocaleString('zh-CN'):'尚未刷新';
+  renderRates();
 
   document.getElementById('homeStats').innerHTML=`
     <div class="stat-b"><div class="l">现金/银行卡等</div><div class="v">¥${fmt(otherCash)}</div></div>
@@ -1207,6 +1291,7 @@ function renderInvest(){
         <div class="item-meta">数量 ${fmt(p.qty,4)} · 成本 ${fmt(p.cost)} · 现价 ${c.has?fmt(p.price):'<span style="color:var(--warning)">待更新</span>'}
           ${c.dayPnlCNY!=null?` · <span class="item-pnl ${c.dayPnlCNY>=0?'up':'down'}">今 ${fmtP(c.dayPnlCNY)}</span>`:''}
         </div>
+        ${c.pendingQty>0?`<div class="item-meta" style="color:var(--warning)">待确认 ${fmt(c.pendingQty,4)} 份，${esc(c.pendingConfirmDate||'')} 确认</div>`:''}
         ${p.priceError?`<div style="font-size:12px;color:var(--warning);margin-top:3px">行情获取失败：${esc(p.priceError)}</div>`:''}
         <div class="btn-row">
           <button class="btn-sm pri" onclick="openTrade('${p.id}','buy')">加仓</button>
@@ -1399,10 +1484,42 @@ function saveTransfer(){
 }
 function delAcc(id){ if(!confirm('删除账户？'))return; S.accounts=S.accounts.filter(a=>a.id!==id); save(); renderAll(); }
 
+/** 基金 15:00 选择（弹窗里的状态）：新建持仓 / 新增交易时是否 15:00 后提交 */
+let posCutoff=false, tradeCutoff=false;
+function cutoffHint(date,afterCutoff){
+  const eff=effDateOf({date,afterCutoff},'fund'), cf=confirmDateOf({date,afterCutoff},'fund');
+  return '按 '+eff+'（'+weekdayStr(eff)+'）净值成交，'+cf+' 确认并开始算盈亏';
+}
+function setCutoff(which,v){ if(which==='pos') posCutoff=v; else tradeCutoff=v; syncCutoffUI(); }
+/** 两个弹窗的 15:00 选择行：只有基金才显示；新建持仓编辑时不显示（底仓日期不动） */
+function syncCutoffUI(){
+  const pr=document.getElementById('pCutoffRow');
+  if(pr){
+    const show=document.getElementById('pType').value==='fund' && !document.getElementById('posId').value;
+    pr.style.display=show?'':'none';
+    document.getElementById('pCutoffBefore').className='btn-sm'+(posCutoff?'':' pri');
+    document.getElementById('pCutoffAfter').className='btn-sm'+(posCutoff?' pri':'');
+    document.getElementById('pCutoffHint').textContent=cutoffHint(today(),posCutoff);
+  }
+  const tr=document.getElementById('tCutoffRow');
+  if(tr){
+    const p=S.positions.find(x=>x.id===document.getElementById('tPos').value);
+    const show=p&&p.type==='fund';
+    tr.style.display=show?'':'none';
+    document.getElementById('tCutoffBefore').className='btn-sm'+(tradeCutoff?'':' pri');
+    document.getElementById('tCutoffAfter').className='btn-sm'+(tradeCutoff?' pri':'');
+    const d=document.getElementById('tDate').value||today();
+    document.getElementById('tCutoffHint').textContent=cutoffHint(d,tradeCutoff);
+  }
+}
+/** 改交易日期时重定 15:00 前后：今天按当前时间，过去的日期默认 15:00 前 */
+function onTradeDateChange(){ const d=document.getElementById('tDate').value||today(); tradeCutoff=d===today()?isAfterCutoffNow():false; syncCutoffUI(); }
+
 function openPosModal(){ document.getElementById('posId').value=''; document.getElementById('posTitle').textContent='添加持仓';
   ['pName','pSymbol','pQty','pCost','pPrice','pPlat'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('pType').value='stock'; document.getElementById('pReal').value='0';
-  ['pQty','pCost'].forEach(i=>{ const e=document.getElementById(i); e.disabled=false; e.title=''; }); openM('posModal'); }
+  posCutoff=isAfterCutoffNow();
+  ['pQty','pCost'].forEach(i=>{ const e=document.getElementById(i); e.disabled=false; e.title=''; }); openM('posModal'); syncCutoffUI(); }
 function editPos(id){ const p=S.positions.find(x=>x.id===id); if(!p)return;
   document.getElementById('posId').value=id; document.getElementById('posTitle').textContent='编辑持仓';
   document.getElementById('pName').value=p.name||''; document.getElementById('pType').value=p.type||'stock';
@@ -1412,7 +1529,7 @@ function editPos(id){ const p=S.positions.find(x=>x.id===id); if(!p)return;
   document.getElementById('pReal').value=p.realizedPnl||0;
   ensureTrades(p); const lock=p.trades.length>1;
   ['pQty','pCost'].forEach(i=>{ const e=document.getElementById(i); e.disabled=lock; e.title=lock?'已有加仓/减仓记录，请在交易记录里修改':''; });
-  openM('posModal'); }
+  openM('posModal'); syncCutoffUI(); }
 function savePos(){
   const id=document.getElementById('posId').value;
   const type=document.getElementById('pType').value;
@@ -1439,6 +1556,7 @@ function savePos(){
     np._tradeDate=today();
     ensureTrades(np);
     np.trades[0].date=today();
+    if(np.type==='fund') np.trades[0].afterCutoff=posCutoff; // 基金按 15:00 规则记生效日
     settleBuyCNY(toCNY((+data.qty||0)*(+data.cost||0), data.currency));
     S.positions.push(np);
   }
@@ -1447,10 +1565,13 @@ function savePos(){
 const SIDE_N={base:'底仓',buy:'加仓',sell:'减仓'};
 function tradeHist(p){
   const tr=p.trades||[]; if(!tr.length) return '';
-  const rows=tr.map(t=>`<div class="item-meta" style="display:flex;justify-content:space-between;gap:6px;padding:4px 0;border-top:0.5px solid var(--sep,rgba(128,128,128,.2))">
-      <span>${esc(t.date||'')} <span class="badge ${t.side==='sell'?'other':'stock'}">${SIDE_N[t.side]||t.side}</span> ${fmt(t.qty,4)} @ ${fmt(t.price,4)}${+t.fee?` · 费 ${fmt(t.fee)}`:''}${t.side==='sell'&&t.pnl!=null?` · <span class="item-pnl ${t.pnl>=0?'up':'down'}">实现 ${fmtP(t.pnl)}</span>`:''}${t.note?` · ${esc(t.note)}`:''}</span>
+  const rows=tr.map(t=>{
+    const eff=p.type==='fund'?effDateOf(t,'fund'):'';
+    const pend=p.type==='fund'&&confirmDateOf(t,'fund')>today();
+    return `<div class="item-meta" style="display:flex;justify-content:space-between;gap:6px;padding:4px 0;border-top:0.5px solid var(--sep,rgba(128,128,128,.2))">
+      <span>${esc(t.date||'')} <span class="badge ${t.side==='sell'?'other':'stock'}">${SIDE_N[t.side]||t.side}</span> ${fmt(t.qty,4)} @ ${fmt(t.price,4)}${+t.fee?` · 费 ${fmt(t.fee)}`:''}${t.side==='sell'&&t.pnl!=null?` · <span class="item-pnl ${t.pnl>=0?'up':'down'}">实现 ${fmtP(t.pnl)}</span>`:''}${t.note?` · ${esc(t.note)}`:''}${eff&&eff!==t.date?` · 按 ${eff} 净值`:''}${pend?` · <span style="color:var(--warning)">待确认</span>`:''}</span>
       ${t.side!=='base'?`<button class="btn-sm dan" style="padding:2px 8px" onclick="delTrade('${p.id}','${t.id}')">删</button>`:''}
-    </div>`).join('');
+    </div>`;}).join('');
   return `<details class="trade-hist" style="margin-top:6px"><summary class="item-meta" style="cursor:pointer">交易记录（${tr.length} 笔）· 持仓 ${fmt(p.qty,4)} · 均价 ${fmt(p.cost,4)} · 总成本 ${fmt((+p.qty||0)*(+p.cost||0))}</summary>${rows}</details>`;
 }
 function openTrade(id,side){ const p=S.positions.find(x=>x.id===id); if(!p)return; ensureTrades(p);
@@ -1461,10 +1582,11 @@ function openTrade(id,side){ const p=S.positions.find(x=>x.id===id); if(!p)retur
   document.getElementById('tNow').textContent=`当前持仓 ${fmt(p.qty,4)} · 均价 ${fmt(p.cost,4)} ${p.currency||''}`;
   document.getElementById('tDate').value=today(); document.getElementById('tFee').value=''; document.getElementById('tNote').value=clear?'清仓':'';
   document.getElementById('tQty').value=clear?(p.qty??''):'';
-  document.getElementById('tPrice').value=p.price??p.cost??''; tradePreview(); openM('tradeModal'); }
+  tradeCutoff=isAfterCutoffNow();
+  document.getElementById('tPrice').value=p.price??p.cost??''; tradePreview(); openM('tradeModal'); syncCutoffUI(); }
 function tradeDraft(){ const p=S.positions.find(x=>x.id===document.getElementById('tPos').value); if(!p) return null;
   const side=document.getElementById('tSide').value, qty=+document.getElementById('tQty').value, price=+document.getElementById('tPrice').value, fee=+document.getElementById('tFee').value||0;
-  return {p,t:{id:uid(),side,date:document.getElementById('tDate').value||today(),qty,price,fee,note:document.getElementById('tNote').value.trim(),ts:Date.now()}}; }
+  return {p,t:{id:uid(),side,date:document.getElementById('tDate').value||today(),afterCutoff:p.type==='fund'?tradeCutoff:false,qty,price,fee,note:document.getElementById('tNote').value.trim(),ts:Date.now()}}; }
 function tradePreview(){ const d=tradeDraft(), el=document.getElementById('tPrev'); if(!d||!(d.t.qty>0)||!(d.t.price>0)){ el.textContent=''; return; }
   const c=JSON.parse(JSON.stringify(d.p)); c.trades.push(d.t); recalcPos(c);
   const cash=toCNY(d.t.qty*d.t.price+(d.t.side==='sell'?-1:1)*(+d.t.fee||0), d.p.currency);
@@ -1517,7 +1639,7 @@ function runDca(id){
   const price=+pos.price||+pos.cost||1;
   const addQty=d.amount/price;
   ensureTrades(pos);
-  pos.trades.push({id:uid(),side:'buy',date:today(),qty:addQty,price:price,fee:0,note:'定投',ts:Date.now()});
+  pos.trades.push({id:uid(),side:'buy',date:today(),afterCutoff:isAfterCutoffNow(),qty:addQty,price:price,fee:0,note:'定投',ts:Date.now()});
   recalcPos(pos);
   settleBuyCNY(d.amount);
   // 推进下次日期
@@ -1648,7 +1770,7 @@ if(!S.accounts.some(a=>a.type==='invest'||a.name==='投资账户')){
 document.getElementById('ledDate').value=today();
 renderAll();
 if(location.hash==='#settings') switchTab('settings');
-fetchRates().then(()=>save());
+fetchRates().then(()=>{ save(); renderRates(); });
 renderAutoU(); setTimeout(()=>autoDailyClose(),2500);
 </script>
 <script src="sync.js"></script>
