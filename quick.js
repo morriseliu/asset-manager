@@ -47,13 +47,14 @@
       note: String(o.note || o.merchant || '').trim(), account: String(o.account || o.acc || '').trim(), date: date };
   }
   function pickAccount(state, name) {
-    var accs = (state.accounts || []);
+    // 旧版「投资账户」已停用：数据里若还留着，不参与快捷记账的账户选择
+    var accs = (state.accounts || []).filter(function (x) { return !(x && (x.type === 'invest' || x.name === '投资账户')); });
     if (name) {
       var a = accs.find(function (x) { return x.name === name; }) || accs.find(function (x) { return x.name && (x.name.indexOf(name) >= 0 || name.indexOf(x.name) >= 0); });
       if (a) return a;
     }
     if (state.quickAccId) { var d = accs.find(function (x) { return x.id === state.quickAccId; }); if (d) return d; }
-    return accs.find(function (x) { return x.type !== 'invest'; }) || null;
+    return accs[0] || null;
   }
   // 把条目合并进 app 状态（与「记一笔」完全相同的记录格式与余额变化）。按 qid 去重。返回新增的记录数组。
   function merge(state, entries, now) {
@@ -64,7 +65,7 @@
       if (!e || !e.qid || seen[e.qid]) return;
       seen[e.qid] = 1;
       var acc = pickAccount(state, e.account);
-      if (acc && acc.type !== 'invest') {
+      if (acc) {
         if (e.type === 'expense') acc.balance = (+acc.balance || 0) - e.amount;
         else if (e.type === 'income') acc.balance = (+acc.balance || 0) + e.amount;
       }

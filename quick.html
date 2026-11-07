@@ -358,7 +358,7 @@ function undo(){
   if(!l.synced){
     var s=loadS(), i=s.ledger.findIndex(function(t){return t.qid===e.qid;});
     if(i>=0){ var rec=s.ledger[i], acc=s.accounts.find(function(a){return a.id===rec.accId;});
-      if(acc&&acc.type!=='invest') acc.balance=(+acc.balance||0)+(rec.type==='expense'?rec.amount:-rec.amount);
+      if(acc) acc.balance=(+acc.balance||0)+(rec.type==='expense'?rec.amount:-rec.amount);
       s.ledger.splice(i,1); ls.setItem(SK,JSON.stringify(s)); }
     return finish('已撤销');
   }

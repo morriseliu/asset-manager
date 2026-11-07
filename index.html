@@ -223,15 +223,10 @@
     <div class="card">
       <div class="card-t"><span>我的账户</span>
         <span>
-          <button class="btn-sm warn" onclick="openTransfer()">转入/转出</button>
           <button class="btn-sm pri" onclick="openAccModal()">＋ 账户</button>
         </span>
       </div>
       <div id="accList"></div>
-    </div>
-    <div class="card">
-      <div class="card-t">资金划转记录</div>
-      <div id="xferList"></div>
     </div>
   </div>
 
@@ -246,15 +241,6 @@
         <option value="crypto">加密</option>
         <option value="other">其他</option>
       </select>
-    </div>
-    <div class="card" id="investCashCard">
-      <div class="card-t"><span>投资账户资金</span>
-        <span>
-          <button class="btn-sm pri" onclick="openSetCash()">设置可用</button>
-          <button class="btn-sm warn" onclick="openTransfer()">转入/转出</button>
-        </span>
-      </div>
-      <div id="investCashBox" class="item-meta">加载中…</div>
     </div>
     <div class="card">
       <div class="card-t">
@@ -367,8 +353,7 @@
         • 股票/港股/美股：腾讯行情（script 通道）<br>
         • 基金：天天基金估值/净值接口<br>
         • 加密：CoinGecko + Binance 回退<br>
-        • 每天北京时间 6:00 后打开 App，自动记录上一交易日收盘盈亏；今日盈亏只算昨天就有的持仓和今天的卖出，当天新买的不算（从明天开始算），休市的日子今日盈亏是 0；删除持仓或一笔买卖记录时，涉及的钱会原样退回可用资金<br>
-        • 投资盈亏会计入「投资账户」联动总资产<br>
+        • 每天北京时间 6:00 后打开 App，自动记录上一交易日收盘盈亏；今日盈亏从买入价起算（今天新买的也按买入价算），休市的日子今日盈亏是 0<br>
         • 数据默认存在本机浏览器；在「设置 → 多设备同步」开启后，也会保存到你自己的 GitHub 私密 Gist
       </p>
     </div>
@@ -384,14 +369,13 @@
   <div class="modal">
     <div class="modal-hd"><div class="modal-tt" id="accTitle">添加账户</div><button class="modal-x" onclick="closeM('accModal')">×</button></div>
     <input type="hidden" id="accId">
-    <div class="form-g"><label>名称</label><input class="form-c" id="accName" required placeholder="招商银行 / 支付宝 / 投资账户"></div>
+    <div class="form-g"><label>名称</label><input class="form-c" id="accName" required placeholder="招商银行 / 支付宝 / 微信"></div>
     <div class="form-r">
       <div class="form-g"><label>类型</label>
         <select class="form-c" id="accType">
           <option value="bank">银行卡</option>
           <option value="alipay">支付宝</option>
           <option value="wechat">微信</option>
-          <option value="invest">投资账户</option>
           <option value="cash">现金</option>
           <option value="other">其他</option>
         </select>
@@ -399,36 +383,6 @@
       <div class="form-g"><label>余额</label><input class="form-c" id="accBal" type="number" step="any" value="0"></div>
     </div>
     <button class="btn btn-p" onclick="saveAcc()">保存</button>
-  </div>
-</div>
-
-<!-- 设置投资可用资金 -->
-<div class="modal-ov" id="cashModal">
-  <div class="modal">
-    <div class="modal-hd"><div class="modal-tt">设置可用资金</div><button class="modal-x" onclick="closeM('cashModal')">×</button></div>
-    <p class="hint">填写投资账户里现在还能用来买的钱（人民币）。不会改你的持仓。买入会扣、卖出加回。</p>
-    <div class="form-g"><label>可用资金（¥）</label><input class="form-c" id="cashVal" type="number" step="any"></div>
-    <button class="btn btn-p" onclick="saveSetCash()">保存</button>
-  </div>
-</div>
-
-<!-- 账户互转 -->
-<div class="modal-ov" id="xferModal">
-  <div class="modal">
-    <div class="modal-hd"><div class="modal-tt">转入 / 转出</div><button class="modal-x" onclick="closeM('xferModal')">×</button></div>
-    <div class="form-g"><label>方向</label>
-      <select class="form-c" id="xferDir" onchange="fillXferSelects()">
-        <option value="in">其他账户 → 投资账户（转入）</option>
-        <option value="out">投资账户 → 其他账户（转出）</option>
-      </select>
-    </div>
-    <div class="form-g"><label>对方账户</label><select class="form-c" id="xferAcc"></select></div>
-    <div class="form-r">
-      <div class="form-g"><label>金额（¥）</label><input class="form-c" id="xferAmt" type="number" step="any"></div>
-      <div class="form-g"><label>日期</label><input class="form-c" id="xferDate" type="date"></div>
-    </div>
-    <div class="form-g"><label>备注（可空）</label><input class="form-c" id="xferNote"></div>
-    <button class="btn btn-p" onclick="saveTransfer()">确认划转</button>
   </div>
 </div>
 
@@ -515,9 +469,8 @@
         <select class="form-c" id="dcaCycle"><option value="daily">每天</option><option value="weekly">每周</option><option value="biweekly">每两周</option><option value="monthly">每月</option></select>
       </div>
     </div>
-    <div class="form-g"><label>下次扣款日</label><input class="form-c" id="dcaNext" type="date"></div>
-    <div class="form-g"><label>扣款账户</label><select class="form-c" id="dcaAcc"></select></div>
-    <p class="hint">到扣款日可点「执行定投」：从账户扣款并增加基金份额（按当前净值估算）</p>
+    <div class="form-g"><label>下次定投日</label><input class="form-c" id="dcaNext" type="date"></div>
+    <p class="hint">到定投日可点「执行定投」：增加基金份额（按当前净值估算），只记份额，不自动扣款</p>
     <button class="btn btn-p" onclick="saveDca()">保存计划</button>
   </div>
 </div>
@@ -587,7 +540,6 @@ function load(){ try{ const r=localStorage.getItem(SK); if(r) S={...S,...JSON.pa
     }
   }catch(e){}
   migrateTrades();
-  migrateInvestCash();
   // 币种自动识别：老数据里手动选错的币种，读进来时按代码市场自动纠正
   // （美股→美元、港股→港币、A股/基金→人民币、加密→美元；“其他”类型不动）
   let curFixed=false;
@@ -914,7 +866,6 @@ async function refreshQuotes(){
     if(r.ok) ok++; else { fail++; fails.push((p.name||p.symbol)+': '+r.msg); }
   }
   S.lastRefresh=Date.now();
-  syncInvestAccount();
   save(); renderAll();
   btn.disabled=false; btn.querySelector('span').textContent='刷新行情';
   const rateNote=fr.ok?'':'\n汇率拉取失败，用上次汇率';
@@ -1022,41 +973,12 @@ function investValue(){
   return {value:v, day:hasD?day:null, cum};
 }
 
-function cashValue(){
-  return S.accounts.reduce((s,a)=>s+(+a.balance||0),0);
-}
 function debtValue(){
   return S.debts.reduce((s,d)=>s+(+d.amount||0),0);
 }
 
-function getInvestAcc(){
-  let acc=S.accounts.find(a=>a.type==='invest'||a.name==='投资账户');
-  if(!acc){
-    acc={id:uid(),name:'投资账户',type:'invest',balance:0,cashInited:false,createdAt:Date.now()};
-    S.accounts.push(acc);
-  }
-  return acc;
-}
-/** 旧版把投资账户余额写成市值；迁移后余额=可用资金，未设置则为 0，不瞎编 */
-function migrateInvestCash(){
-  if(!Array.isArray(S.transfers)) S.transfers=[];
-  const acc=S.accounts.find(a=>a.type==='invest'||a.name==='投资账户');
-  if(!acc) return;
-  if(acc.cashInited) return;
-  // 旧数据：余额约等于市值 → 清成 0，等用户自己设
-  acc.balance=0; acc.cashInited=false; acc._migratedFromMv=true;
-}
-function holdingsCostCNY(){
-  return S.positions.reduce((s,p)=>s+toCNY((+p.qty||0)*(+p.cost||0), p.currency),0);
-}
-function applyInvestCash(deltaCNY){
-  const acc=getInvestAcc();
-  acc.balance=Math.round(((+acc.balance||0)+deltaCNY)*100)/100;
-  if(acc.balance<-0.005) toast('可用资金已为负 ¥'+fmt(acc.balance)+'，可转入资金或点「设置可用」');
-}
-function settleBuyCNY(cny){ applyInvestCash(-(+cny||0)); }
-function settleSellCNY(cny){ applyInvestCash(+cny||0); }
-function syncInvestAccount(){ getInvestAcc(); /* 余额不再被市值覆盖 */ }
+/** 旧版自动生成的「投资账户」：资金功能已取消，数据原样留在存储里，但界面和汇总不再出现它、不再读写它的余额 */
+function isLegacyInvestAcc(a){ return !!a && (a.type==='invest'||a.name==='投资账户'); }
 
 // ===== 每日收盘自动记录（替代手动「标记收盘」）=====
 // 记录按「交易日」存：例如 30 号 6:00 后打开，会写入 29 号的记录 = 29 号 A股/港股收盘 + 29 号基金净值 + 29 号美股（北京 30 号凌晨收盘）。
@@ -1156,11 +1078,9 @@ setInterval(()=>autoDailyClose(),10*60e3);
 
 // ===== Render =====
 function renderAll(){
-  syncInvestAccount();
   const inv=investValue(), debt=debtValue();
-  const otherCash=S.accounts.filter(a=>a.type!=='invest').reduce((s,a)=>s+(+a.balance||0),0);
-  const invCash=+getInvestAcc().balance||0;
-  const assets=otherCash+invCash+inv.value;
+  const otherCash=S.accounts.filter(a=>!isLegacyInvestAcc(a)).reduce((s,a)=>s+(+a.balance||0),0);
+  const assets=otherCash+inv.value;
   const net=assets-debt;
   document.getElementById('netWorth').textContent='¥'+fmt(net);
   document.getElementById('totalAssets').textContent='¥'+fmt(assets);
@@ -1175,7 +1095,7 @@ function renderAll(){
 
   document.getElementById('homeStats').innerHTML=`
     <div class="stat-b"><div class="l">现金/银行卡等</div><div class="v">¥${fmt(otherCash)}</div></div>
-    <div class="stat-b"><div class="l">投资（可用+市值）</div><div class="v">¥${fmt(invCash+inv.value)}</div></div>
+    <div class="stat-b"><div class="l">投资市值</div><div class="v">¥${fmt(inv.value)}</div></div>
     <div class="stat-b"><div class="l">待还</div><div class="v" style="color:var(--danger)">¥${fmt(debt)}</div></div>
     <div class="stat-b"><div class="l">持仓数</div><div class="v">${S.positions.filter(p=>(+p.qty||0)>1e-10).length}</div></div>`;
   // 本月收支
@@ -1225,42 +1145,23 @@ function renderAll(){
 
 function renderAccounts(){
   const el=document.getElementById('accList');
-  const inv=getInvestAcc(); const used=holdingsCostCNY(); const avail=+inv.balance||0; const total=avail+used;
-  const mv=investValue().value;
-  const cashBox=document.getElementById('investCashBox');
-  if(cashBox){
-    cashBox.innerHTML=(!inv.cashInited&&!avail?
-      `<div style="color:var(--warning)">可用资金未设置（默认 ¥0）。点右上角「设置可用」填入账户里还能买的钱。</div>`:'')+
-      `<div style="margin-top:4px">投资账户共 <b>¥${fmt(total)}</b>　已使用 <b>¥${fmt(used)}</b>　可用资金 <b style="color:${avail<0?'var(--danger)':'var(--accent)'}">¥${fmt(avail)}</b></div>
-       <div class="hint" style="margin:4px 0 0">持仓市值 ¥${fmt(mv)} · 共有=可用+持仓成本；买入扣可用、卖出加回</div>`;
-  }
-  if(!S.accounts.length){ el.innerHTML='<div class="empty">点击 ＋ 添加银行卡/支付宝等</div>'; }
-  else el.innerHTML=S.accounts.map(a=>{
-    const isInv=a.type==='invest'||a.name==='投资账户';
+  const list=S.accounts.filter(a=>!isLegacyInvestAcc(a));
+  if(!list.length){ el.innerHTML='<div class="empty">点击 ＋ 添加银行卡/支付宝等</div>'; }
+  else el.innerHTML=list.map(a=>{
     return `<div class="item">
       <div class="item-top">
         <div><div class="item-name">${esc(a.name)}</div>
-          <div class="item-meta"><span class="badge ${a.type}">${{bank:'银行卡',alipay:'支付宝',wechat:'微信',invest:'投资',cash:'现金',other:'其他'}[a.type]||a.type}</span>
-            ${isInv?` · 可用 ¥${fmt(+a.balance||0)} · 已用 ¥${fmt(used)}`:` · 余额`}</div>
+          <div class="item-meta"><span class="badge ${a.type}">${{bank:'银行卡',alipay:'支付宝',wechat:'微信',cash:'现金',other:'其他'}[a.type]||a.type}</span>
+             · 余额</div>
         </div>
-        <div class="item-r"><div class="item-v">¥${fmt(isInv?total:(+a.balance||0))}</div></div>
+        <div class="item-r"><div class="item-v">¥${fmt(+a.balance||0)}</div></div>
       </div>
       <div class="btn-row">
-        ${isInv?'<button class="btn-sm warn" onclick="openTransfer()">转入/转出</button><button class="btn-sm pri" onclick="openSetCash()">设置可用</button>':''}
         <button class="btn-sm pri" onclick="editAcc('${a.id}')">编辑</button>
         <button class="btn-sm dan" onclick="delAcc('${a.id}')">删除</button>
       </div>
     </div>`;
   }).join('');
-  const xl=document.getElementById('xferList');
-  if(xl){
-    const list=(S.transfers||[]).slice().sort((a,b)=>String(b.date).localeCompare(String(a.date))||(b.ts||0)-(a.ts||0)).slice(0,50);
-    xl.innerHTML=list.length?list.map(t=>{
-      const other=S.accounts.find(a=>a.id===t.otherId);
-      return `<div class="item"><div class="item-top"><div class="item-name">${t.dir==='in'?'转入':'转出'} ¥${fmt(t.amount)}</div>
-        <div class="item-meta">${esc(t.date)} · ${t.dir==='in'?'从':'到'} ${esc(other?other.name:t.otherId)}${t.note?' · '+esc(t.note):''}</div></div></div>`;
-    }).join(''):'<div class="empty">暂无划转记录</div>';
-  }
 }
 
 function histStats(p){
@@ -1455,9 +1356,7 @@ function showDay(ds){
 
 function fillSelects(){
   const la=document.getElementById('ledAcc');
-  if(la) la.innerHTML=S.accounts.map(a=>`<option value="${a.id}">${esc(a.name)}</option>`).join('')||'<option value="">请先添加账户</option>';
-  const da=document.getElementById('dcaAcc');
-  if(da) da.innerHTML=S.accounts.filter(a=>a.type!=='invest').map(a=>`<option value="${a.id}">${esc(a.name)}</option>`).join('');
+  if(la) la.innerHTML=S.accounts.filter(a=>!isLegacyInvestAcc(a)).map(a=>`<option value="${a.id}">${esc(a.name)}</option>`).join('')||'<option value="">请先添加账户</option>';
   const dp=document.getElementById('dcaPos');
   if(dp) dp.innerHTML=S.positions.filter(p=>p.type==='fund').map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('')||'<option value="">请先添加基金持仓</option>';
 }
@@ -1472,29 +1371,9 @@ function saveAcc(){
   const id=document.getElementById('accId').value;
   const data={name:document.getElementById('accName').value.trim(),type:document.getElementById('accType').value,balance:+document.getElementById('accBal').value||0};
   if(!data.name) return toast('请填名称');
-  if(data.type==='invest') data.cashInited=true;
   if(id){ const i=S.accounts.findIndex(a=>a.id===id); if(i>=0) S.accounts[i]={...S.accounts[i],...data}; }
   else S.accounts.push({id:uid(),...data,createdAt:Date.now()});
   save(); closeM('accModal'); renderAll(); toast('已保存');
-}
-function openSetCash(){ const a=getInvestAcc(); document.getElementById('cashVal').value=a.cashInited||a.balance?a.balance:''; openM('cashModal'); }
-function saveSetCash(){ const a=getInvestAcc(); a.balance=+document.getElementById('cashVal').value||0; a.cashInited=true; save(); closeM('cashModal'); renderAll(); toast('可用资金已设为 ¥'+fmt(a.balance)); }
-function fillXferSelects(){
-  const sel=document.getElementById('xferAcc');
-  const others=S.accounts.filter(a=>a.type!=='invest'&&a.name!=='投资账户');
-  sel.innerHTML=others.map(a=>`<option value="${a.id}">${esc(a.name)}（¥${fmt(+a.balance||0)}）</option>`).join('')||'<option value="">请先添加其他账户</option>';
-}
-function openTransfer(){ fillXferSelects(); document.getElementById('xferDir').value='in'; document.getElementById('xferAmt').value=''; document.getElementById('xferNote').value=''; document.getElementById('xferDate').value=today(); openM('xferModal'); }
-function saveTransfer(){
-  const dir=document.getElementById('xferDir').value, otherId=document.getElementById('xferAcc').value, amt=+document.getElementById('xferAmt').value, date=document.getElementById('xferDate').value||today(), note=document.getElementById('xferNote').value.trim();
-  if(!otherId) return toast('请选择对方账户');
-  if(!(amt>0)) return toast('请填金额');
-  const inv=getInvestAcc(), other=S.accounts.find(a=>a.id===otherId); if(!other) return;
-  if(dir==='in'){ other.balance=(+other.balance||0)-amt; applyInvestCash(amt); inv.cashInited=true; }
-  else { applyInvestCash(-amt); inv.cashInited=true; other.balance=(+other.balance||0)+amt; }
-  S.transfers=S.transfers||[];
-  S.transfers.push({id:uid(),dir,otherId,amount:amt,date,note,ts:Date.now()});
-  save(); closeM('xferModal'); renderAll(); toast(dir==='in'?'已转入投资账户':'已转出投资账户');
 }
 function delAcc(id){ if(!confirm('删除账户？'))return; S.accounts=S.accounts.filter(a=>a.id!==id); save(); renderAll(); }
 
@@ -1571,10 +1450,9 @@ function savePos(){
     ensureTrades(np);
     np.trades[0].date=today();
     if(np.type==='fund') np.trades[0].afterCutoff=posCutoff; // 基金按 15:00 规则记生效日
-    settleBuyCNY(toCNY((+data.qty||0)*(+data.cost||0), data.currency));
     S.positions.push(np);
   }
-  syncInvestAccount(); save(); closeM('posModal'); renderAll(); toast('已保存 · '+data.symbolNorm);
+  save(); closeM('posModal'); renderAll(); toast('已保存 · '+data.symbolNorm);
 }
 const SIDE_N={base:'底仓',buy:'加仓',sell:'减仓'};
 function tradeHist(p){
@@ -1604,58 +1482,40 @@ function tradeDraft(){ const p=S.positions.find(x=>x.id===document.getElementByI
 function tradePreview(){ const d=tradeDraft(), el=document.getElementById('tPrev'); if(!d||!(d.t.qty>0)||!(d.t.price>0)){ el.textContent=''; return; }
   const c=JSON.parse(JSON.stringify(d.p)); c.trades.push(d.t); recalcPos(c);
   const cash=toCNY(d.t.qty*d.t.price+(d.t.side==='sell'?-1:1)*(+d.t.fee||0), d.p.currency);
-  el.textContent=(d.t.side==='sell'?`卖出后：剩 ${fmt(c.qty,4)} · 均价 ${fmt(c.cost,4)} · 本笔实现 ${fmtP(c.trades.find(x=>x.id===d.t.id).pnl)} · 回笼约 ¥${fmt(cash)}`:`加仓后：共 ${fmt(c.qty,4)} · 均价 ${fmt(c.cost,4)} · 扣可用约 ¥${fmt(cash)}`); }
+  el.textContent=(d.t.side==='sell'?`卖出后：剩 ${fmt(c.qty,4)} · 均价 ${fmt(c.cost,4)} · 本笔实现 ${fmtP(c.trades.find(x=>x.id===d.t.id).pnl)} · 卖出约 ¥${fmt(cash)}`:`加仓后：共 ${fmt(c.qty,4)} · 均价 ${fmt(c.cost,4)} · 本笔约 ¥${fmt(cash)}`); }
 function saveTrade(){ const d=tradeDraft(); if(!d) return; const {p,t}=d;
   if(!(t.qty>0)||!(t.price>0)) return toast('请填数量和价格');
   if(t.side==='sell'&&t.qty>(+p.qty||0)+1e-9) return toast('减仓数量不能超过当前持仓 '+fmt(p.qty,4));
   p.trades.push(t); recalcPos(p);
-  const cash=toCNY(t.qty*t.price, p.currency); const fee=toCNY(+t.fee||0, p.currency);
-  if(t.side==='sell') settleSellCNY(cash-fee); else settleBuyCNY(cash+fee);
-  syncInvestAccount(); save(); closeM('tradeModal'); renderAll();
+  save(); closeM('tradeModal'); renderAll();
   toast(t.side==='sell'?((+p.qty||0)<=1e-10?'已清仓，移入历史持仓':'已减仓'):'已加仓 · 均价 '+fmt(p.cost,4)); }
 function delTrade(pid,tid){ const p=S.positions.find(x=>x.id===pid); if(!p||!confirm('删除这笔记录？'))return;
-  const t=(p.trades||[]).find(x=>x.id===tid);
-  if(t&&t.side!=='base'){ // 删掉这笔买卖，也把它的钱原样退回：买入扣的还回来，卖出拿到的扣回去
-    const amt=(+t.qty||0)*(+t.price||0);
-    applyInvestCash(toCNY(t.side==='sell'?-(amt-(+t.fee||0)):amt+(+t.fee||0), p.currency));
-  }
-  p.trades=p.trades.filter(t=>t.id!==tid||t.side==='base'); recalcPos(p); syncInvestAccount(); save(); renderAll(); }
-function delPos(id){ if(!confirm('删除持仓？'))return; const p=S.positions.find(x=>x.id===id);
-  if(p){ ensureTrades(p); reversePosCash(p); } // 删持仓 = 当没买过：这只持仓买卖过的钱原样退回可用资金
-  S.positions=S.positions.filter(x=>x.id!==id); syncInvestAccount(); save(); renderAll(); }
-/** 把一只持仓所有买卖对可用资金的影响原样退回：买入扣的钱还回来，卖出拿到的钱扣回去 */
-function reversePosCash(p){ let out=0;
-  for(const t of p.trades||[]){ const amt=(+t.qty||0)*(+t.price||0);
-    if(t.side==='sell') out-=amt-(+t.fee||0); else out+=amt+(+t.fee||0); }
-  if(out) applyInvestCash(toCNY(out,p.currency));
-}
+  p.trades=p.trades.filter(t=>t.id!==tid||t.side==='base'); recalcPos(p); save(); renderAll(); }
+function delPos(id){ if(!confirm('删除持仓？'))return;
+  S.positions=S.positions.filter(x=>x.id!==id); save(); renderAll(); }
 function openPrice(id){ const p=S.positions.find(x=>x.id===id); if(!p)return;
   document.getElementById('prId').value=id; document.getElementById('prLab').textContent=p.name+' 价格'; document.getElementById('prVal').value=p.price??''; openM('priceModal'); }
 function savePrice(){ const p=S.positions.find(x=>x.id===document.getElementById('prId').value); if(!p)return;
   p.price=+document.getElementById('prVal').value; p.priceError=null; p.lastPriceUpdate=Date.now();
-  syncInvestAccount(); save(); closeM('priceModal'); renderAll(); toast('价格已更新'); }
+  save(); closeM('priceModal'); renderAll(); toast('价格已更新'); }
 
 function openDcaModal(){ fillSelects(); document.getElementById('dcaAmt').value=''; document.getElementById('dcaNext').value=today(); openM('dcaModal'); }
 function saveDca(){
   const posId=document.getElementById('dcaPos').value;
   if(!posId) return toast('请先添加基金持仓');
   S.dca.push({id:uid(),posId,amount:+document.getElementById('dcaAmt').value,cycle:document.getElementById('dcaCycle').value,
-    nextDate:document.getElementById('dcaNext').value,accId:document.getElementById('dcaAcc').value});
+    nextDate:document.getElementById('dcaNext').value});
   save(); closeM('dcaModal'); renderAll(); toast('定投计划已保存');
 }
 function delDca(id){ S.dca=S.dca.filter(d=>d.id!==id); save(); renderAll(); }
 function runDca(id){
   const d=S.dca.find(x=>x.id===id); if(!d)return;
   const pos=S.positions.find(p=>p.id===d.posId); if(!pos) return toast('持仓不存在');
-  const acc=S.accounts.find(a=>a.id===d.accId);
-  const inv=getInvestAcc();
-  if(acc && acc.id!==inv.id){ if((+acc.balance||0)<d.amount) return toast('账户余额不足'); acc.balance=(+acc.balance||0)-d.amount; applyInvestCash(d.amount); inv.cashInited=true; }
   const price=+pos.price||+pos.cost||1;
   const addQty=d.amount/price;
   ensureTrades(pos);
   pos.trades.push({id:uid(),side:'buy',date:today(),afterCutoff:isAfterCutoffNow(),qty:addQty,price:price,fee:0,note:'定投',ts:Date.now()});
   recalcPos(pos);
-  settleBuyCNY(d.amount);
   // 推进下次日期
   const n=new Date((d.nextDate||today())+'T12:00:00');
   if(d.cycle==='daily') n.setDate(n.getDate()+1);
@@ -1663,8 +1523,7 @@ function runDca(id){
   else if(d.cycle==='biweekly') n.setDate(n.getDate()+14);
   else n.setMonth(n.getMonth()+1);
   d.nextDate=n.getFullYear()+'-'+String(n.getMonth()+1).padStart(2,'0')+'-'+String(n.getDate()).padStart(2,'0');
-  S.ledger.unshift({id:uid(),type:'expense',amount:d.amount,accId:d.accId,note:'定投 '+pos.name,date:today(),createdAt:Date.now()});
-  syncInvestAccount(); save(); renderAll();
+  save(); renderAll();
   toast(`定投成功：+${fmt(addQty,4)} 份`);
 }
 
@@ -1697,7 +1556,7 @@ function saveLedger(e){
   const date=document.getElementById('ledDate').value||today();
   if(!accId) return toast('请先添加账户');
   const acc=S.accounts.find(a=>a.id===accId);
-  if(acc && acc.type!=='invest'){
+  if(acc && !isLegacyInvestAcc(acc)){
     if(type==='expense') acc.balance=(+acc.balance||0)-amount;
     else if(type==='income') acc.balance=(+acc.balance||0)+amount;
   }
@@ -1732,7 +1591,7 @@ function setQuickAcc(id){ S.quickAccId=id||''; save(); }
 function quickLink(){ return location.origin+location.pathname.replace(/[^/]*$/,'')+'quick.html'; }
 function renderQuick(){
   const sel=document.getElementById('qaAcc'); if(!sel) return;
-  const accs=S.accounts.filter(a=>a.type!=='invest');
+  const accs=S.accounts.filter(a=>!isLegacyInvestAcc(a));
   const cur=(AMQuick.pickAccount(S,'')||{}).id||'';
   sel.innerHTML=accs.map(a=>`<option value="${a.id}" ${a.id===cur?'selected':''}>${esc(a.name)}</option>`).join('')||'<option value="">请先添加账户</option>';
   document.getElementById('qaLink').textContent=quickLink();
@@ -1778,9 +1637,6 @@ document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>swit
 
 load();
 handleUrlAdd();
-if(!S.accounts.some(a=>a.type==='invest'||a.name==='投资账户')){
-  // ensure invest account after positions loaded
-}
 document.getElementById('ledDate').value=today();
 renderAll();
 if(location.hash==='#settings') switchTab('settings');

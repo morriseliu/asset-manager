@@ -27,9 +27,7 @@
   function snapshot() { var o = {}; DATA_KEYS.forEach(function (k) { var v = g(k); if (v != null) o[k] = v; }); return o; }
   function hasData(data) {
     try { var m = JSON.parse(data['allin_finance_v1'] || '{}');
-      // 忽略 app 自动生成、余额为 0 的「投资账户」
-      var accs = (m.accounts || []).filter(function (a) { return !(a && a.type === 'invest' && !+a.balance); });
-      if (accs.length || ['ledger', 'positions', 'history', 'dca', 'debts'].some(function (x) { return (m[x] || []).length; })) return true;
+      if ((m.accounts || []).length || ['ledger', 'positions', 'history', 'dca', 'debts'].some(function (x) { return (m[x] || []).length; })) return true;
     } catch (e) {}
     return DATA_KEYS.slice(1).some(function (k) { return data[k] != null; });
   }
@@ -194,7 +192,7 @@
         var l = num(K.localTs), last = num(K.lastTs), dirty = l > last;
         if (!res.remote) return push(null);
         var r = +res.remote.updatedAt || 0;
-        // 本机从未同步且没有实际数据（只有自动生成的空「投资账户」）→ 直接下载
+        // 本机从未同步且没有实际数据 → 直接下载
         if (!last && !hasData(snapshot())) return applyRemote(res.remote);
         // 首次在本机连接：两边都有数据时让用户选
         if (!last && hasData(snapshot()) && hasData(res.remote.data) && fingerprint(snapshot()) !== fingerprint(res.remote.data)) {
