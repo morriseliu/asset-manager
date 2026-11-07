@@ -745,92 +745,92 @@ function cryptoMeta(id){
 async function fetchCrypto(id){
   const rate=S.rates.USD||7.15;
   const m=cryptoMeta(id);
-  const errs=[];
   const ok=usd=>{ if(usd&&!isNaN(usd)&&usd>0) return {usd:+usd, cny:+usd*rate}; return null; };
-
-  // 通道并行抢第一个成功（提高成功率）
+  // 7 个源全部保留，同时发起，先成功返回，单个 6 秒封顶。
+  // 顺序试才是慢的根子：被墙的源在后台自己超时、根本不拖时间（它输掉比赛而已），
+  // 留着等于多 4 条备用链路——哪天 CoinPaprika 挂了，其他源还有可能兜底。
+  // 错误统一由抢答包装按源打标签（CB/BV/PP/CL/MP/CG/KC），拼在持仓的行情失败行里。
+  const task=(label,fn)=>{ fn.label=label; return fn; };
   const tasks=[];
 
-  // 1 Coinbase（CORS *，美国稳定）
-  if(m.sym) tasks.push(async()=>{
+  // 1 Coinbase
+  if(m.sym) tasks.push(task('CB',async()=>{
     const res=await fetch('https://api.coinbase.com/v2/prices/'+m.sym+'-USD/spot',{cache:'no-store',mode:'cors'});
-    if(!res.ok) throw new Error('CB'+res.status);
+    if(!res.ok) throw new Error(res.status);
     const d=await res.json();
     const r=ok(parseFloat(d.data&&d.data.amount));
-    if(!r) throw new Error('CB空');
+    if(!r) throw new Error('空');
     return r;
-  });
+  }));
 
-  // 2 Binance Vision 公开域名（少地区限制）
-  if(m.sym) tasks.push(async()=>{
+  // 2 Binance Vision
+  if(m.sym) tasks.push(task('BV',async()=>{
     const res=await fetch('https://data-api.binance.vision/api/v3/ticker/price?symbol='+m.sym+'USDT',{cache:'no-store',mode:'cors'});
-    if(!res.ok) throw new Error('BV'+res.status);
+    if(!res.ok) throw new Error(res.status);
     const d=await res.json();
     const r=ok(parseFloat(d.price));
-    if(!r) throw new Error('BV空');
+    if(!r) throw new Error('空');
     return r;
-  });
+  }));
 
   // 3 CoinPaprika
-  if(m.paprika) tasks.push(async()=>{
+  if(m.paprika) tasks.push(task('PP',async()=>{
     const res=await fetch('https://api.coinpaprika.com/v1/tickers/'+m.paprika,{cache:'no-store',mode:'cors'});
-    if(!res.ok) throw new Error('PP'+res.status);
+    if(!res.ok) throw new Error(res.status);
     const d=await res.json();
     const r=ok(d.quotes&&d.quotes.USD&&d.quotes.USD.price);
-    if(!r) throw new Error('PP空');
+    if(!r) throw new Error('空');
     return r;
-  });
+  }));
 
   // 4 CoinLore
-  if(m.lore) tasks.push(async()=>{
+  if(m.lore) tasks.push(task('CL',async()=>{
     const res=await fetch('https://api.coinlore.net/api/ticker/?id='+m.lore,{cache:'no-store',mode:'cors'});
-    if(!res.ok) throw new Error('CL'+res.status);
+    if(!res.ok) throw new Error(res.status);
     const d=await res.json();
     const r=ok(d[0]&&d[0].price_usd);
-    if(!r) throw new Error('CL空');
+    if(!r) throw new Error('空');
     return r;
-  });
+  }));
 
   // 5 MarginPad
-  if(m.sym) tasks.push(async()=>{
+  if(m.sym) tasks.push(task('MP',async()=>{
     const res=await fetch('https://marginpad.io/api/v1/price?symbol='+m.sym,{cache:'no-store',mode:'cors'});
-    if(!res.ok) throw new Error('MP'+res.status);
+    if(!res.ok) throw new Error(res.status);
     const d=await res.json();
     const r=ok(d.data&&d.data.price);
-    if(!r) throw new Error('MP空');
+    if(!r) throw new Error('空');
     return r;
-  });
+  }));
 
   // 6 CoinGecko
-  tasks.push(async()=>{
+  tasks.push(task('CG',async()=>{
     const res=await fetch('https://api.coingecko.com/api/v3/simple/price?ids='+encodeURIComponent(m.cg)+'&vs_currencies=usd,cny',{cache:'no-store',mode:'cors'});
-    if(!res.ok) throw new Error('CG'+res.status);
+    if(!res.ok) throw new Error(res.status);
     const d=await res.json();
     if(d[m.cg]&&d[m.cg].usd) return {usd:d[m.cg].usd, cny:d[m.cg].cny||d[m.cg].usd*rate};
-    throw new Error('CG空');
-  });
+    throw new Error('空');
+  }));
 
   // 7 KuCoin
-  if(m.sym) tasks.push(async()=>{
+  if(m.sym) tasks.push(task('KC',async()=>{
     const res=await fetch('https://api.kucoin.com/api/v1/market/orderbook/level1?symbol='+m.sym+'-USDT',{cache:'no-store',mode:'cors'});
-    if(!res.ok) throw new Error('KC'+res.status);
+    if(!res.ok) throw new Error(res.status);
     const d=await res.json();
     const r=ok(d.data&&d.data.price);
-    if(!r) throw new Error('KC空');
+    if(!r) throw new Error('空');
     return r;
-  });
+  }));
 
-  // 顺序尝试 + 短超时，避免卡死
-  for(const t of tasks){
-    try{
-      const r=await Promise.race([
-        t(),
-        new Promise((_,rej)=>setTimeout(()=>rej(new Error('超时')),6000))
-      ]);
-      if(r&&r.usd) return r;
-    }catch(e){ errs.push((e&&e.message)||'err'); }
-  }
-  throw new Error(errs.slice(0,4).join('|')||'加密行情失败');
+  if(!tasks.length) throw new Error('加密行情失败');
+  // 并行抢答：同时发起，先成功返回；全部失败才抛错
+  return new Promise((resolve,reject)=>{
+    let pending=tasks.length; const errs=[];
+    const fail=t=>e=>{ errs.push((t.label||'')+((e&&e.message)||'err')); if(--pending===0) reject(new Error(errs.slice(0,4).join('|')||'加密行情失败')); };
+    tasks.forEach(t=>{
+      Promise.race([t(),new Promise((_,rej)=>setTimeout(()=>rej(new Error('超时')),6000))]).then(resolve,fail(t));
+    });
+  });
 }
 // ===== 实时汇率：与小程序「持仓记」同款三源链 =====
 // 按顺序尝试三个源，第一个成功的就用；全部失败返回 {ok:false}，保留上次汇率。
