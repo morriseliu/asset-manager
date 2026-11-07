@@ -366,7 +366,7 @@
         • 股票/港股/美股：腾讯行情（script 通道）<br>
         • 基金：天天基金估值/净值接口<br>
         • 加密：CoinGecko + Binance 回退<br>
-        • 每天北京时间 6:00 后打开 App，自动记录上一交易日收盘盈亏；今日盈亏按「昨仓×昨收 + 今日买卖价」计算，当天新买不会用昨收<br>
+        • 每天北京时间 6:00 后打开 App，自动记录上一交易日收盘盈亏；今日盈亏只算昨天就有的持仓和今天的卖出，当天新买的不算（从明天开始算），休市的日子今日盈亏是 0；删除持仓或一笔买卖记录时，涉及的钱会原样退回可用资金<br>
         • 投资盈亏会计入「投资账户」联动总资产<br>
         • 数据默认存在本机浏览器；在「设置 → 多设备同步」开启后，也会保存到你自己的 GitHub 私密 Gist
       </p>
@@ -664,7 +664,9 @@ function parseTx(text){
   const p=m[1].split('~');
   const price=parseFloat(p[3]), prev=parseFloat(p[4]), name=p[1]||'';
   if(!price||isNaN(price)) throw new Error('价格无效');
-  return {price,prevClose:prev,name};
+  // 行情本身带的日期（如 2026-11-06）：用来判断今天该市场到底开没开盘
+  const quoteDate=((p.find(x=>/^\d{4}-\d{2}-\d{2}/.test(x||''))||'').slice(0,10))||null;
+  return {price,prevClose:prev,name,quoteDate};
 }
 function fetchTencentScript(code){
   return new Promise((resolve,reject)=>{
@@ -701,7 +703,8 @@ async function fetchFund(code){
   const price=parseFloat(item.GSZ||item.NAV);
   const prev=parseFloat(item.NAV);
   if(!price||isNaN(price)) throw new Error('无净值');
-  return {price, prevClose: prev, name: item.SHORTNAME||''};
+  const quoteDate=((item.GZTIME||'').slice(0,10))||item.PDATE||null;
+  return {price, prevClose: prev, name: item.SHORTNAME||'', quoteDate};
 }
 function cryptoMeta(id){
   const L=String(id||'').toLowerCase().trim();
@@ -831,17 +834,20 @@ async function updateOne(p){
     if(type==='crypto'){
       const q=await fetchCrypto(code);
       p.price=p.currency==='CNY'?q.cny:q.usd;
+      p.quoteDate=today(); // 加密 24 小时交易，每天都算
       p.lastPriceUpdate=Date.now(); p.priceError=null; return {ok:true};
     }
     if(type==='fund'){
       const q=await fetchFund(code);
       p.price=q.price; p.prevClose=q.prevClose;
+      if(q.quoteDate) p.quoteDate=q.quoteDate;
       if(q.name) p.name=q.name;
       p.lastPriceUpdate=Date.now(); p.priceError=null; return {ok:true};
     }
     // stock
     const q=await fetchTencent(code);
     p.price=q.price; p.prevClose=q.prevClose;
+    if(q.quoteDate) p.quoteDate=q.quoteDate;
     if(q.name) p.name=q.name;
     p.lastPriceUpdate=Date.now(); p.priceError=null; return {ok:true};
   }catch(e){
@@ -884,7 +890,8 @@ function dayFlow(p,ds){
   }
   return {buyCost,sellProceeds,buyQ,sellQ};
 }
-/** 今日盈亏 = 现市值 − 昨收×昨仓 − 今日买入成本 + 今日卖出所得。今天新买的部分按买入价起算，不会用昨收。 */
+/** 今日盈亏：只算昨天就有的持仓和今天的卖出。
+  * 今天新买的不算（按买入价起算，从明天开始算）；今天该市场没开盘（行情日期不是今天），今日盈亏记 0，不把上一交易日的涨跌算到今天。 */
 function calcPos(p){
   const qty=+p.qty||0, cost=+p.cost||0;
   const has=p.price!=null&&!isNaN(p.price);
@@ -900,10 +907,14 @@ function calcPos(p){
     const qs=qtyStart(p,ds);
     const fl=dayFlow(p,ds);
     const prev=(p.prevClose!=null&&!isNaN(p.prevClose))?+p.prevClose:(p.closePrice!=null&&!isNaN(p.closePrice)?+p.closePrice:null);
-    if(qs>0 && prev==null){
-      if(fl.buyQ||fl.sellQ) dayPnl=value - fl.buyCost + fl.sellProceeds;
+    if(p.quoteDate && p.quoteDate!==ds){
+      dayPnl=0; // 行情是上一交易日的，今天没开盘
+    } else if(qs===0 && !fl.buyQ && !fl.sellQ){
+      dayPnl=null; // 今天之前没持仓、今天也没买卖，没法算
+    } else if(qs>0 && prev==null){
+      if(fl.buyQ||fl.sellQ) dayPnl=value - fl.buyQ*price + fl.sellProceeds;
     } else {
-      dayPnl=value - qs*(prev||0) - fl.buyCost + fl.sellProceeds;
+      dayPnl=value - fl.buyQ*price - qs*(prev||0) + fl.sellProceeds;
     }
   }
   return {
@@ -1023,7 +1034,7 @@ async function autoDailyClose(force){
         const px=hasBar?m[T]:(prevD!=null?m[prevD]:null);
         if(px!=null && qe>0) value+=toCNY(qe*px,p.currency);
         if(qs>0 && prevD==null && !fl.buyQ && !fl.sellQ) continue;
-        const day=toCNY((qe*(hasBar?m[T]:0)) - qs*(prevD!=null?m[prevD]:0) - fl.buyCost + fl.sellProceeds, p.currency);
+        const day=toCNY((qe*(hasBar?m[T]:0)) - qs*(prevD!=null?m[prevD]:0) - fl.buyQ*(hasBar?m[T]:0) + fl.sellProceeds, p.currency);
         total+=day;
         details.push({id:p.id,name:p.name||p.symbol,type:p.type,symbol:p.symbolNorm||p.symbol,dayPnl:day,value:px!=null&&qe?toCNY(qe*px,p.currency):0,price:hasBar?m[T]:null,prev:prevD!=null?m[prevD]:null,qty:qe,qtyStart:qs});
       }
@@ -1467,8 +1478,21 @@ function saveTrade(){ const d=tradeDraft(); if(!d) return; const {p,t}=d;
   syncInvestAccount(); save(); closeM('tradeModal'); renderAll();
   toast(t.side==='sell'?((+p.qty||0)<=1e-10?'已清仓，移入历史持仓':'已减仓'):'已加仓 · 均价 '+fmt(p.cost,4)); }
 function delTrade(pid,tid){ const p=S.positions.find(x=>x.id===pid); if(!p||!confirm('删除这笔记录？'))return;
+  const t=(p.trades||[]).find(x=>x.id===tid);
+  if(t&&t.side!=='base'){ // 删掉这笔买卖，也把它的钱原样退回：买入扣的还回来，卖出拿到的扣回去
+    const amt=(+t.qty||0)*(+t.price||0);
+    applyInvestCash(toCNY(t.side==='sell'?-(amt-(+t.fee||0)):amt+(+t.fee||0), p.currency));
+  }
   p.trades=p.trades.filter(t=>t.id!==tid||t.side==='base'); recalcPos(p); syncInvestAccount(); save(); renderAll(); }
-function delPos(id){ if(!confirm('删除持仓？'))return; S.positions=S.positions.filter(p=>p.id!==id); syncInvestAccount(); save(); renderAll(); }
+function delPos(id){ if(!confirm('删除持仓？'))return; const p=S.positions.find(x=>x.id===id);
+  if(p){ ensureTrades(p); reversePosCash(p); } // 删持仓 = 当没买过：这只持仓买卖过的钱原样退回可用资金
+  S.positions=S.positions.filter(x=>x.id!==id); syncInvestAccount(); save(); renderAll(); }
+/** 把一只持仓所有买卖对可用资金的影响原样退回：买入扣的钱还回来，卖出拿到的钱扣回去 */
+function reversePosCash(p){ let out=0;
+  for(const t of p.trades||[]){ const amt=(+t.qty||0)*(+t.price||0);
+    if(t.side==='sell') out-=amt-(+t.fee||0); else out+=amt+(+t.fee||0); }
+  if(out) applyInvestCash(toCNY(out,p.currency));
+}
 function openPrice(id){ const p=S.positions.find(x=>x.id===id); if(!p)return;
   document.getElementById('prId').value=id; document.getElementById('prLab').textContent=p.name+' 价格'; document.getElementById('prVal').value=p.price??''; openM('priceModal'); }
 function savePrice(){ const p=S.positions.find(x=>x.id===document.getElementById('prId').value); if(!p)return;
