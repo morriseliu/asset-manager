@@ -961,8 +961,9 @@ function dayFlow(p,ds){
   }
   return {buyCost,sellProceeds,buyQ,sellQ};
 }
-/** 今日盈亏：只算昨天就有的持仓和今天的卖出。
-  * 今天新买的不算（按买入价起算，从明天开始算）；今天该市场没开盘（行情日期不是今天），今日盈亏记 0，不把上一交易日的涨跌算到今天。
+/** 今日盈亏 = 期末市值 − 期初市值 − 今天买入花掉的钱 + 今天卖出收到的钱。
+  * 今天买入的按买入价起算，当天涨跌就计入（买入价就是成本，(现价−买入价)×份数就是今天的盈亏）；
+  * 今天该市场没开盘（行情日期不是今天），今日盈亏记 0，不把上一交易日的涨跌算到今天。
   * 基金按 15:00 规则算生效日：15:00 后买入的份数第二天不算盈亏（生效日是第二天），第三天才开始算；
   * 15:00 后卖出的，卖出所得算在生效日那天；周末提交的顺延到周一。公式里用 qtyEOD（按生效日算的当日收盘后数量）而不用 p.qty，
   * 否则 15:00 后卖出的份额当天收盘还在账上，卖出部分当天涨跌会被算丢。 */
@@ -981,15 +982,19 @@ function calcPos(p){
     const qs=qtyStart(p,ds);
     const fl=dayFlow(p,ds);
     const qe=qtyEOD(p,ds);
+    // 基金当天生效的买入还是待确认的：执行价就是当天净值，当天没有价差——
+    // 期末数量去掉这部分，买入成本也不扣；股票/加密没有待确认概念，按买入价起算不变。
+    const qc=qe - (p.type==='fund' ? fl.buyQ : 0);
+    const buyCostEff=(p.type==='fund' ? 0 : fl.buyCost);
     const prev=(p.prevClose!=null&&!isNaN(p.prevClose))?+p.prevClose:(p.closePrice!=null&&!isNaN(p.closePrice)?+p.closePrice:null);
     if(p.quoteDate && p.quoteDate!==ds){
       dayPnl=0; // 行情是上一交易日的，今天没开盘
     } else if(qs===0 && !fl.buyQ && !fl.sellQ){
       dayPnl=null; // 今天之前没持仓、今天也没买卖，没法算
     } else if(qs>0 && prev==null){
-      if(fl.buyQ||fl.sellQ) dayPnl=qe*price - fl.buyQ*price + fl.sellProceeds;
+      if(fl.buyQ||fl.sellQ) dayPnl=qc*price - buyCostEff + fl.sellProceeds;
     } else {
-      dayPnl=qe*price - fl.buyQ*price - qs*(prev||0) + fl.sellProceeds;
+      dayPnl=qc*price - qs*(prev||0) - buyCostEff + fl.sellProceeds;
     }
   }
   const pend=pendingInfo(p);
@@ -1078,6 +1083,15 @@ async function fetchBars(p){ // 返回 {日期: 收盘价/净值}
   }
   const m={}; bars.forEach(b=>{ const v=parseFloat(b[2]); if(v) m[b[0]]=v; }); return m;
 }
+/** 单只持仓某日的日盈亏（收盘记录用，与 calcPos 同口径）：
+ *  期末市值 − 期初市值 − 当天买入成本 + 当天卖出所得。
+ *  休市日（hasBar 为假）买入成本不计：当天没行情，买入不能算成一笔 −buyCost 的亏损。
+ *  基金当天生效的买入还是待确认的：期末数量去掉这部分，买入成本也不扣（执行价就是当天净值）。 */
+function closeDay(qe, qs, prevPx, hasBar, px, fl, type){
+  const qc=qe - (type==='fund' ? fl.buyQ : 0);
+  const buyCostEff=(type==='fund' ? 0 : fl.buyCost);
+  return (qc*(hasBar?px:0)) - qs*(prevPx!=null?prevPx:0) - (hasBar?buyCostEff:0) + fl.sellProceeds;
+}
 let autoBusy=false;
 async function autoDailyClose(force){
   if(autoBusy||!S.positions.length) return; const now=Date.now();
@@ -1111,7 +1125,7 @@ async function autoDailyClose(force){
         const px=hasBar?m[T]:(prevD!=null?m[prevD]:null);
         if(px!=null && qe>0) value+=toCNY(qe*px,p.currency);
         if(qs>0 && prevD==null && !fl.buyQ && !fl.sellQ) continue;
-        const day=toCNY((qe*(hasBar?m[T]:0)) - qs*(prevD!=null?m[prevD]:0) - fl.buyQ*(hasBar?m[T]:0) + fl.sellProceeds, p.currency);
+        const day=toCNY(closeDay(qe, qs, prevD!=null?m[prevD]:null, hasBar, hasBar?m[T]:null, fl, p.type), p.currency);
         total+=day;
         details.push({id:p.id,name:p.name||p.symbol,type:p.type,symbol:p.symbolNorm||p.symbol,dayPnl:day,value:px!=null&&qe?toCNY(qe*px,p.currency):0,price:hasBar?m[T]:null,prev:prevD!=null?m[prevD]:null,qty:qe,qtyStart:qs});
       }
