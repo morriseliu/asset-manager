@@ -439,11 +439,11 @@
     <div class="form-g"><label>名称</label><input class="form-c" id="pName" required></div>
     <div class="form-r">
       <div class="form-g"><label>类型</label>
-        <select class="form-c" id="pType"><option value="stock">股票</option><option value="fund">基金</option><option value="crypto">加密</option><option value="other">其他</option></select>
+        <select class="form-c" id="pType" onchange="updateCurUI()"><option value="stock">股票</option><option value="fund">基金</option><option value="crypto">加密</option><option value="other">其他</option></select>
       </div>
       <div class="form-g" style="position:relative">
         <label>代码（可搜索）</label>
-        <input class="form-c" id="pSymbol" required autocomplete="off" oninput="symSearch(this.value)" onfocus="symSearch(this.value)">
+        <input class="form-c" id="pSymbol" required autocomplete="off" oninput="symSearch(this.value);updateCurUI()" onfocus="symSearch(this.value)">
         <div class="suggest" id="symSug"></div>
       </div>
     </div>
@@ -453,8 +453,10 @@
     </div>
     <div class="form-r">
       <div class="form-g"><label>现价（可空）</label><input class="form-c" id="pPrice" type="number" step="any"></div>
-      <div class="form-g"><label>货币</label>
-        <select class="form-c" id="pCur"><option value="CNY">CNY</option><option value="USD">USD</option><option value="HKD">HKD</option><option value="USDT">USDT</option></select>
+      <div class="form-g"><label>货币（自动识别）</label>
+        <div class="form-c" id="pCurAuto" style="background:#f4f6f9">人民币 CNY</div>
+        <select class="form-c" id="pCur" style="display:none"><option value="CNY">CNY</option><option value="USD">USD</option><option value="HKD">HKD</option><option value="USDT">USDT</option></select>
+        <p class="hint" style="margin-top:4px">美股→美元、港股→港币、A股/基金→人民币、加密→美元；只有“其他”才需要手动选。</p>
       </div>
     </div>
     <div class="form-g"><label>平台</label><input class="form-c" id="pPlat" placeholder="老虎 / 雪球 / 天天基金"></div>
@@ -578,6 +580,11 @@ function load(){ try{ const r=localStorage.getItem(SK); if(r) S={...S,...JSON.pa
   }catch(e){}
   migrateTrades();
   migrateInvestCash();
+  // 币种自动识别：老数据里手动选错的币种，读进来时按代码市场自动纠正
+  // （美股→美元、港股→港币、A股/基金→人民币、加密→美元；“其他”类型不动）
+  let curFixed=false;
+  (S.positions||[]).forEach(p=>{ const c=currencyForCode(p.symbol,p.type); if(c && p.currency!==c){ p.currency=c; curFixed=true; } });
+  if(curFixed) try{ localStorage.setItem(SK, JSON.stringify(S)); }catch(e){}
 }
 /* 持仓交易记录：老数据（只有一次买入）自动变成第一条「底仓」记录，不删除任何字段 */
 function ensureTrades(p){
@@ -627,6 +634,28 @@ function normSym(raw,type){
   if(/^[A-Za-z]{1,5}$/.test(s)) return 'us'+s.toUpperCase();
   return s;
 }
+/** 币种自动识别：用户不用选，按代码的市场定。基金→人民币；加密→美元；
+ *  股票：美股（us 前缀或裸字母代码）→美元，港股（hk 前缀或 4–5 位数字）→港币，
+ *  A 股（sh/sz/bj 前缀或 6 位数字）→人民币；“其他”类型无法识别，返回 '' 表示手动选。 */
+function currencyForCode(raw,type){
+  if(type==='fund') return 'CNY';
+  if(type==='crypto') return 'USD';
+  if(type==='other') return '';
+  const code=normSym(raw,'stock');
+  if(/^us/i.test(code)) return 'USD';
+  if(/^hk/i.test(code)) return 'HKD';
+  return 'CNY';
+}
+function currencyName(c){ return c==='USD'?'美元 USD':c==='HKD'?'港币 HKD':c==='USDT'?'USDT':'人民币 CNY'; }
+/** 持仓弹窗里的货币栏：股票/基金/加密显示自动识别的币种（只读），“其他”才显示手动下拉框 */
+function updateCurUI(){
+  const t=document.getElementById('pType').value;
+  const sym=document.getElementById('pSymbol').value.trim();
+  const auto=currencyForCode(sym,t);
+  const autoEl=document.getElementById('pCurAuto'), sel=document.getElementById('pCur');
+  if(auto){ autoEl.style.display=''; autoEl.textContent=currencyName(auto); sel.style.display='none'; }
+  else { autoEl.style.display='none'; sel.style.display=''; }
+}
 
 function symSearch(q){
   const box=document.getElementById('symSug'); if(!box) return;
@@ -640,7 +669,7 @@ function pickSym(c,n,t,cur){
   document.getElementById('pSymbol').value=c;
   document.getElementById('pName').value=n;
   document.getElementById('pType').value=t;
-  document.getElementById('pCur').value=cur||'CNY';
+  updateCurUI();
   document.getElementById('symSug').style.display='none';
 }
 document.addEventListener('click',e=>{
@@ -1380,14 +1409,16 @@ function delAcc(id){ if(!confirm('删除账户？'))return; S.accounts=S.account
 
 function openPosModal(){ document.getElementById('posId').value=''; document.getElementById('posTitle').textContent='添加持仓';
   ['pName','pSymbol','pQty','pCost','pPrice','pPlat'].forEach(id=>document.getElementById(id).value='');
-  document.getElementById('pType').value='stock'; document.getElementById('pCur').value='CNY'; document.getElementById('pReal').value='0';
+  document.getElementById('pType').value='stock'; document.getElementById('pReal').value='0';
+  updateCurUI();
   ['pQty','pCost'].forEach(i=>{ const e=document.getElementById(i); e.disabled=false; e.title=''; }); openM('posModal'); }
 function editPos(id){ const p=S.positions.find(x=>x.id===id); if(!p)return;
   document.getElementById('posId').value=id; document.getElementById('posTitle').textContent='编辑持仓';
   document.getElementById('pName').value=p.name||''; document.getElementById('pType').value=p.type||'stock';
   document.getElementById('pSymbol').value=p.symbol||''; document.getElementById('pQty').value=p.qty??'';
   document.getElementById('pCost').value=p.cost??''; document.getElementById('pPrice').value=p.price??'';
-  document.getElementById('pCur').value=p.currency||'CNY'; document.getElementById('pPlat').value=p.platform||'';
+  document.getElementById('pPlat').value=p.platform||'';
+  updateCurUI(); if(p.type==='other') document.getElementById('pCur').value=p.currency||'CNY';
   document.getElementById('pReal').value=p.realizedPnl||0;
   ensureTrades(p); const lock=p.trades.length>1;
   ['pQty','pCost'].forEach(i=>{ const e=document.getElementById(i); e.disabled=lock; e.title=lock?'已有加仓/减仓记录，请在交易记录里修改':''; });
@@ -1401,7 +1432,7 @@ function savePos(){
     symbolNorm:normSym(symbol,type),
     qty:+document.getElementById('pQty').value, cost:+document.getElementById('pCost').value,
     price:document.getElementById('pPrice').value?+document.getElementById('pPrice').value:null,
-    currency:document.getElementById('pCur').value, platform:document.getElementById('pPlat').value.trim(),
+    currency:currencyForCode(symbol,type)||document.getElementById('pCur').value, platform:document.getElementById('pPlat').value.trim(),
     realizedPnl:+document.getElementById('pReal').value||0
   };
   if(!data.name||!data.symbol) return toast('请填名称和代码');
