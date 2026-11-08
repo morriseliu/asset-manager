@@ -223,10 +223,15 @@
     <div class="card">
       <div class="card-t"><span>我的账户</span>
         <span>
+          <button class="btn-sm warn" onclick="openTransfer()">互转</button>
           <button class="btn-sm pri" onclick="openAccModal()">＋ 账户</button>
         </span>
       </div>
       <div id="accList"></div>
+    </div>
+    <div class="card">
+      <div class="card-t">资金划转记录</div>
+      <div id="xferList"></div>
     </div>
   </div>
 
@@ -383,6 +388,23 @@
       <div class="form-g"><label>余额</label><input class="form-c" id="accBal" type="number" step="any" value="0"></div>
     </div>
     <button class="btn btn-p" onclick="saveAcc()">保存</button>
+  </div>
+</div>
+
+<!-- 账户互转 -->
+<div class="modal-ov" id="xferModal">
+  <div class="modal">
+    <div class="modal-hd"><div class="modal-tt">账户互转</div><button class="modal-x" onclick="closeM('xferModal')">×</button></div>
+    <div class="form-r">
+      <div class="form-g"><label>转出账户</label><select class="form-c" id="xferFrom"></select></div>
+      <div class="form-g"><label>转入账户</label><select class="form-c" id="xferTo"></select></div>
+    </div>
+    <div class="form-r">
+      <div class="form-g"><label>金额（¥）</label><input class="form-c" id="xferAmt" type="number" step="any"></div>
+      <div class="form-g"><label>日期</label><input class="form-c" id="xferDate" type="date"></div>
+    </div>
+    <div class="form-g"><label>备注（可空）</label><input class="form-c" id="xferNote"></div>
+    <button class="btn btn-p" onclick="saveTransfer()">确认转账</button>
   </div>
 </div>
 
@@ -1152,13 +1174,13 @@ function renderAccounts(){
   const list=S.accounts.filter(a=>!isLegacyInvestAcc(a));
   if(!list.length){ el.innerHTML='<div class="empty">点击 ＋ 添加银行卡/支付宝等</div>'; }
   else el.innerHTML=list.map(a=>{
+    const bal=+a.balance||0; // 余额为 0 时不显示余额数字（行保留，以后还能往里转钱）
     return `<div class="item">
       <div class="item-top">
         <div><div class="item-name">${esc(a.name)}</div>
-          <div class="item-meta"><span class="badge ${a.type}">${{bank:'银行卡',alipay:'支付宝',wechat:'微信',cash:'现金',other:'其他'}[a.type]||a.type}</span>
-             · 余额</div>
+          <div class="item-meta"><span class="badge ${a.type}">${{bank:'银行卡',alipay:'支付宝',wechat:'微信',cash:'现金',other:'其他'}[a.type]||a.type}</span>${bal===0?'':' · 余额'}</div>
         </div>
-        <div class="item-r"><div class="item-v">¥${fmt(+a.balance||0)}</div></div>
+        ${bal===0?'':'<div class="item-r"><div class="item-v">¥'+fmt(bal)+'</div></div>'}
       </div>
       <div class="btn-row">
         <button class="btn-sm pri" onclick="editAcc('${a.id}')">编辑</button>
@@ -1166,6 +1188,7 @@ function renderAccounts(){
       </div>
     </div>`;
   }).join('');
+  renderXferList();
 }
 
 function histStats(p){
@@ -1380,6 +1403,66 @@ function saveAcc(){
   save(); closeM('accModal'); renderAll(); toast('已保存');
 }
 function delAcc(id){ if(!confirm('删除账户？'))return; S.accounts=S.accounts.filter(a=>a.id!==id); save(); renderAll(); }
+
+/** 账户互转（通用版）：任意两个非投资账户之间转钱；投资账户不参与（资金功能已取消，见 isLegacyInvestAcc） */
+function xferAccounts(){ return S.accounts.filter(a=>!isLegacyInvestAcc(a)); }
+function fillXferSelects(){
+  const opts=xferAccounts().map(a=>`<option value="${a.id}">${esc(a.name)}（¥${fmt(+a.balance||0)}）</option>`).join('')||'<option value="">请先添加账户</option>';
+  const f=document.getElementById('xferFrom'), t=document.getElementById('xferTo');
+  if(f) f.innerHTML=opts;
+  if(t) t.innerHTML=opts;
+}
+function openTransfer(){
+  fillXferSelects();
+  const list=xferAccounts();
+  document.getElementById('xferFrom').value=list[0]?list[0].id:'';
+  document.getElementById('xferTo').value=list[1]?list[1].id:(list[0]?list[0].id:'');
+  document.getElementById('xferAmt').value='';
+  document.getElementById('xferNote').value='';
+  document.getElementById('xferDate').value=today();
+  openM('xferModal');
+}
+function saveTransfer(){
+  const fromId=document.getElementById('xferFrom').value, toId=document.getElementById('xferTo').value;
+  const amt=+document.getElementById('xferAmt').value;
+  const date=document.getElementById('xferDate').value||today();
+  const note=document.getElementById('xferNote').value.trim();
+  if(!fromId||!toId) return toast('请先添加账户');
+  if(fromId===toId) return toast('转出和转入不能是同一个账户');
+  if(!(amt>0)) return toast('请填金额');
+  const from=S.accounts.find(a=>a.id===fromId), to=S.accounts.find(a=>a.id===toId);
+  if(!from||!to||isLegacyInvestAcc(from)||isLegacyInvestAcc(to)) return toast('账户不存在');
+  if((+from.balance||0)<amt) return toast('转出账户余额不足');
+  from.balance=(+from.balance||0)-amt;
+  to.balance=(+to.balance||0)+amt;
+  S.transfers=S.transfers||[];
+  S.transfers.push({id:uid(),fromId,toId,amount:amt,date,note,ts:Date.now()});
+  save(); closeM('xferModal'); renderAll(); toast('已转账');
+}
+function renderXferList(){
+  const xl=document.getElementById('xferList'); if(!xl) return;
+  // 只渲染新格式记录（{fromId,toId}）；旧格式（{dir,otherId}，属于已删的投资账户流程）直接跳过，不让列表崩掉
+  const list=(S.transfers||[]).filter(t=>t&&t.fromId&&t.toId).slice()
+    .sort((a,b)=>String(b.date).localeCompare(String(a.date))||(b.ts||0)-(a.ts||0)).slice(0,50);
+  if(!list.length){ xl.innerHTML='<div class="empty">暂无划转记录</div>'; return; }
+  xl.innerHTML=list.map(t=>{
+    const from=S.accounts.find(a=>a.id===t.fromId), to=S.accounts.find(a=>a.id===t.toId);
+    return `<div class="item"><div class="item-top"><div><div class="item-name">${esc(from?from.name:'已删除账户')} → ${esc(to?to.name:'已删除账户')} ¥${fmt(t.amount)}</div>
+      <div class="item-meta">${esc(t.date)}${t.note?' · '+esc(t.note):''}</div></div></div>
+      <div class="btn-row"><button class="btn-sm dan" onclick="delTransfer('${t.id}')">删除</button></div></div>`;
+  }).join('');
+}
+function delTransfer(id){
+  const t=(S.transfers||[]).find(x=>x.id===id); if(!t) return;
+  if(!confirm('删除这条划转记录？余额会按原路冲回。')) return;
+  const from=S.accounts.find(a=>a.id===t.fromId), to=S.accounts.find(a=>a.id===t.toId);
+  if(!from||!to){ S.transfers=S.transfers.filter(x=>x.id!==id); save(); renderAll(); toast('已删除（相关账户已不存在，未做冲正）'); return; }
+  if((+to.balance||0)<(+t.amount||0)) return toast('转入账户余额不足，无法冲回');
+  from.balance=(+from.balance||0)+(+t.amount||0);
+  to.balance=(+to.balance||0)-(+t.amount||0);
+  S.transfers=S.transfers.filter(x=>x.id!==id);
+  save(); renderAll(); toast('已删除并冲回');
+}
 
 /** 基金 15:00 选择（弹窗里的状态）：新建持仓 / 新增交易时是否 15:00 后提交 */
 let posCutoff=false, tradeCutoff=false;
