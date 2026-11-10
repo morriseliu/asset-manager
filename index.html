@@ -521,7 +521,7 @@
           • 添加持仓时输入代码或名称即可，类型和币种自动识别<br>
           • 投资账户 = 持仓市值 + 闲钱。买入、加仓、定投从闲钱扣，卖出、减仓、清仓回到闲钱；闲钱可与银行卡等账户互转（只能转出闲钱）。互转记在明细账本，不算收入、支出，也不算投资盈亏<br>
           • 外汇交易账户可绑定交易复盘：余额自动等于复盘账户（美元），每日盈亏记入账本和盈亏统计，入金出金按转账处理<br>
-          • 每天北京时间 6:00 后打开 App，自动记录上一交易日收盘盈亏；今日盈亏从买入价起算（今天新买的也按买入价算），休市的日子今日盈亏是 0<br>
+          • 每天北京时间 6:00 后打开 App，自动记录上一交易日收盘盈亏；今日盈亏 = 数量 ×（现价 − 前收盘价）。美股在北京时间次日 06:00 前仍算同一个交易日；休市日记 0。打开应用和回到前台会自动刷新行情<br>
           • 数据默认存在本机浏览器；在「我的 → 设置 → 多设备同步」开启后，也会保存到你自己的 GitHub 私密 Gist
         </p>
       </div>
@@ -1401,8 +1401,8 @@ function parseTx(text){
   const p=m[1].split('~');
   const price=parseFloat(p[3]), prev=parseFloat(p[4]), name=p[1]||'';
   if(!price||isNaN(price)) throw new Error('价格无效');
-  // 行情本身带的日期（如 2026-11-06）：用来判断今天该市场到底开没开盘
-  const quoteDate=((p.find(x=>/^\d{4}-\d{2}-\d{2}/.test(x||''))||'').slice(0,10))||null;
+  // 行情日期：美股 2026-11-10 11:05:19，港股 2026/11/10 16:08:41，A股 20261110161453
+  const quoteDate=normQuoteDate(p.find(x=>normQuoteDate(x)));
   return {price,prevClose:prev,name,quoteDate};
 }
 function fetchTencentScript(code){
@@ -1440,7 +1440,7 @@ async function fetchFund(code){
   const price=parseFloat(item.GSZ||item.NAV);
   const prev=parseFloat(item.NAV);
   if(!price||isNaN(price)) throw new Error('无净值');
-  const quoteDate=((item.GZTIME||'').slice(0,10))||item.PDATE||null;
+  const quoteDate=normQuoteDate(item.GZTIME)||normQuoteDate(item.PDATE);
   return {price, prevClose: prev, name: item.SHORTNAME||'', quoteDate};
 }
 function cryptoMeta(id){
@@ -1629,9 +1629,15 @@ async function updateOne(p){
   }
 }
 
-async function refreshQuotes(){
+let quoteRefreshAt=0;
+async function refreshQuotes(manual){
+  const isManual=manual!==false;
+  const nowMs=Date.now();
+  if(!isManual && nowMs-quoteRefreshAt<30000) return;
+  quoteRefreshAt=nowMs;
   const btn=document.getElementById('btnRef');
-  btn.disabled=true; btn.querySelector('span').textContent='刷新中…';
+  if(isManual&&btn){ btn.disabled=true; const sp=btn.querySelector('span'); if(sp) sp.textContent='刷新中…'; }
+  try{
   const fr=await fetchRates(); // 汇率失败不阻塞行情：用上次拉到的值继续算，只提示
   let ok=0,fail=0; const fails=[];
   for(const p of S.positions){
@@ -1641,9 +1647,14 @@ async function refreshQuotes(){
   S.lastRefresh=Date.now();
   save(); renderAll();
   await syncFx();
-  btn.disabled=false; btn.querySelector('span').textContent='刷新';
-  const rateNote=fr.ok?'':'\n汇率拉取失败，用上次汇率';
-  toast((fail?`成功 ${ok}，失败 ${fail}\n`+fails.slice(0,2).join('\n'):`刷新成功 ${ok} 个`)+rateNote, (fail||!fr.ok)?5000:2500);
+  if(isManual){
+    const rateNote=fr.ok?'':'\n汇率拉取失败，用上次汇率';
+    toast((fail?`成功 ${ok}，失败 ${fail}\n`+fails.slice(0,2).join('\n'):`刷新成功 ${ok} 个`)+rateNote, (fail||!fr.ok)?5000:2500);
+  }
+  return {ok,fail};
+  } finally {
+    if(isManual&&btn){ btn.disabled=false; const sp=btn.querySelector('span'); if(sp) sp.textContent='刷新'; }
+  }
 }
 
 // ===== 中国场外基金 15:00 规则（证监会口径）=====
@@ -1686,12 +1697,43 @@ function dayFlow(p,ds){
   }
   return {buyCost,sellProceeds,buyQ,sellQ};
 }
-/** 今日盈亏 = 期末市值 − 期初市值 − 今天买入花掉的钱 + 今天卖出收到的钱。
-  * 今天买入的按买入价起算，当天涨跌就计入（买入价就是成本，(现价−买入价)×份数就是今天的盈亏）；
-  * 今天该市场没开盘（行情日期不是今天），今日盈亏记 0，不把上一交易日的涨跌算到今天。
-  * 基金按 15:00 规则算生效日：15:00 后买入的份数第二天不算盈亏（生效日是第二天），第三天才开始算；
-  * 15:00 后卖出的，卖出所得算在生效日那天；周末提交的顺延到周一。公式里用 qtyEOD（按生效日算的当日收盘后数量）而不用 p.qty，
-  * 否则 15:00 后卖出的份额当天收盘还在账上，卖出部分当天涨跌会被算丢。 */
+/** 行情日期归一成 YYYY-MM-DD。腾讯美股带横线，港股用斜线，A股是 14 位紧凑数字。 */
+function normQuoteDate(s){
+  if(s==null||s==='') return null;
+  const t=String(s).trim();
+  let m=t.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if(m) return m[1]+'-'+m[2]+'-'+m[3];
+  m=t.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})/);
+  if(m) return m[1]+'-'+String(+m[2]).padStart(2,'0')+'-'+String(+m[3]).padStart(2,'0');
+  m=t.match(/^(\d{4})(\d{2})(\d{2})\d{6}$/);
+  if(m) return m[1]+'-'+m[2]+'-'+m[3];
+  return null;
+}
+/** 美股：北京时间次日 06:00 前仍算前一个美股交易日（与收盘记录 06:00 结算同一口径）。A股/港股/基金按北京日历日。 */
+function marketKind(p){
+  if(!p) return 'cn';
+  if(p.type==='crypto') return 'crypto';
+  if(p.type==='fund') return 'cn';
+  const s=String(p.symbolNorm||p.symbol||'');
+  if(/^us/i.test(s)) return 'us';
+  return 'cn';
+}
+function bjClock(now){
+  const d=new Date((now==null?Date.now():+now)+8*3600e3);
+  return {date:d.toISOString().slice(0,10), h:d.getUTCHours()};
+}
+function sessionDateOf(p, now){
+  const c=bjClock(now);
+  if(marketKind(p)==='us' && c.h<6){
+    const t=new Date(Date.parse(c.date+'T00:00:00Z')-864e5);
+    return t.toISOString().slice(0,10);
+  }
+  return c.date;
+}
+/** 今日盈亏 = 数量 × (现价 − 前收盘价)，今天买卖再加减本笔现金流。
+ *  行情日期对不上该市场的「今日」就记 0（休市，不把上一交易日涨跌算进来）。
+ *  美股的今日是当前美股交易日：北京时间 0:00–6:00 仍属前一晚开盘的那个交易日，06:00 才结算。
+ *  基金按 15:00 规则算生效日；公式用 qtyEOD，避免 15:00 后卖出的份额把当天涨跌算丢。 */
 function calcPos(p){
   const qty=+p.qty||0, cost=+p.cost||0;
   const has=p.price!=null&&!isNaN(p.price);
@@ -1703,7 +1745,7 @@ function calcPos(p){
   const cumulative=floating!=null?floating+realized:realized;
   let dayPnl=null;
   if(has){
-    const ds=today();
+    const ds=sessionDateOf(p);
     const qs=qtyStart(p,ds);
     const fl=dayFlow(p,ds);
     const qe=qtyEOD(p,ds);
@@ -1713,7 +1755,7 @@ function calcPos(p){
     const buyCostEff=(p.type==='fund' ? 0 : fl.buyCost);
     const prev=(p.prevClose!=null&&!isNaN(p.prevClose))?+p.prevClose:(p.closePrice!=null&&!isNaN(p.closePrice)?+p.closePrice:null);
     if(p.quoteDate && p.quoteDate!==ds){
-      dayPnl=0; // 行情是上一交易日的，今天没开盘
+      dayPnl=0; // 该市场这根行情不是当前交易日
     } else if(qs===0 && !fl.buyQ && !fl.sellQ){
       dayPnl=null; // 今天之前没持仓、今天也没买卖，没法算
     } else if(qs>0 && prev==null){
@@ -2166,7 +2208,7 @@ function renderRates(){
   const r=S.rates||{};
   e.textContent=`汇率 USD ${fmtRate(r.USD)} · HKD ${fmtRate(r.HKD)}（${r.updatedAt?rateTimeStr(r.updatedAt)+(r.source?' · '+r.source:''):'未记录更新时间'}）`;
 }
-document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible'){ autoDailyClose(); syncFx(); } });
+document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible'){ autoDailyClose(); syncFx(); refreshQuotes(false); } });
 setInterval(()=>autoDailyClose(),10*60e3);
 
 // ===== Render =====
@@ -3024,14 +3066,14 @@ function switchTab(name){
 }
 document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>switchTab(t.dataset.t)));
 
-window.__am={classifyLocal,pickSuggest,parseHint,mapHit,confirmAsset,buildBookEvents,goalTargetOf,weekBounds,MILESTONES,isCnFundCode,fallbackGuess,confirmSix,isInvestAcc,idleCash,assetTotals,convertAmt,migrateInvestCash,fxCalcPnL,fxSummaryFromPayload,fxReadLocalSummary,raw:()=>S};
+window.__am={classifyLocal,pickSuggest,parseHint,mapHit,confirmAsset,buildBookEvents,goalTargetOf,weekBounds,MILESTONES,isCnFundCode,fallbackGuess,confirmSix,isInvestAcc,idleCash,assetTotals,convertAmt,migrateInvestCash,fxCalcPnL,fxSummaryFromPayload,fxReadLocalSummary,normQuoteDate,sessionDateOf,marketKind,raw:()=>S};
 load();
 handleUrlAdd();
 document.getElementById('ledDate').value=today();
 renderAll();
 if(location.hash==='#settings') switchTab('settings');
 fetchRates().then(()=>{ save(); renderRates(); });
-renderAutoU(); setTimeout(()=>autoDailyClose(),2500); setTimeout(()=>syncFx(),800);
+renderAutoU(); setTimeout(()=>autoDailyClose(),2500); setTimeout(()=>syncFx(),800); setTimeout(()=>refreshQuotes(false),500);
 </script>
 <script src="sync.js"></script>
 <script>
