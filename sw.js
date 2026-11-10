@@ -1,6 +1,6 @@
 // 全能资产管家 service worker: app shell cache-first, price/rate APIs network-only.
 const PREFIX = 'asset-manager-';
-const CACHE = PREFIX + 'v13'; // v13：金额卡片改为总额主数字 + 两栏 + 占比条，窄屏不再把数字截出屏幕
+const CACHE = PREFIX + 'v14'; // v14：绑定交易复盘外汇账户，余额和每日盈亏随复盘同步
 const CHART_JS = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js';
 const SHELL = [
   './',

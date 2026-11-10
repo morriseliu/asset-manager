@@ -48,7 +48,7 @@
   }
   function pickAccount(state, name) {
     // 快捷记账只动普通账户。投资账户的闲钱由买卖和互转记账，避免把入金出金记成收支
-    var accs = (state.accounts || []).filter(function (x) { return !(x && (x.type === 'invest' || x.name === '投资账户')); });
+    var accs = (state.accounts || []).filter(function (x) { return !(x && (x.type === 'invest' || x.name === '投资账户' || x.type === 'fx')); });
     if (name) {
       var a = accs.find(function (x) { return x.name === name; }) || accs.find(function (x) { return x.name && (x.name.indexOf(name) >= 0 || name.indexOf(x.name) >= 0); });
       if (a) return a;

@@ -23,7 +23,7 @@
       --text:#1C1433; --text2:#4A4360; --muted:#8E87A3; --sep:rgba(70,50,120,.10);
       --danger:#E5484D; --success:#12A36A; --warning:#C4841D;
       --up:#E5484D; --down:#12A36A;
-      --c-stock:#6C4DFF; --c-fund:#2FBF86; --c-crypto:#F0A202; --c-other:#F27BA8; --c-cash:#3D7DFF;
+      --c-stock:#6C4DFF; --c-fund:#2FBF86; --c-crypto:#F0A202; --c-other:#F27BA8; --c-cash:#3D7DFF; --c-fx:#1AA6B8;
       --radius:20px; --ease:cubic-bezier(.32,.72,0,1);
       --tabbar:62px; --sb:env(safe-area-inset-bottom,0px);
       --shadow:0 10px 30px rgba(72,48,140,.07);
@@ -35,7 +35,7 @@
         --text:#F6F3FF; --text2:#D9D2EE; --muted:#A79FBE; --sep:rgba(190,170,255,.14);
         --danger:#FF6B6E; --success:#3DDC97; --warning:#E3B341;
         --up:#FF6B6E; --down:#3DDC97;
-        --c-stock:#B7A6FF; --c-fund:#3DDC97; --c-crypto:#F5C451; --c-other:#FF9BC0; --c-cash:#8FB4FF;
+        --c-stock:#B7A6FF; --c-fund:#3DDC97; --c-crypto:#F5C451; --c-other:#FF9BC0; --c-cash:#8FB4FF; --c-fx:#5CDEE8;
         --shadow:0 10px 30px rgba(0,0,0,.28);
       }
     }
@@ -101,9 +101,11 @@
     .badge.other{background:rgba(242,123,168,.16);color:#D4548C}
     .badge.stock{background:var(--accent-soft);color:var(--accent)}
     .badge.invest{background:rgba(61,125,255,.14);color:#2F6FE0}
+    .badge.fx{background:rgba(26,166,184,.16);color:#0E7C8A}
     @media (prefers-color-scheme:dark){
       .badge.fund{color:#3DDC97}.badge.crypto{color:#F5C451}.badge.other{color:#FF9BC0}
       .badge.invest{background:rgba(143,180,255,.16);color:#B7D0FF}
+      .badge.fx{background:rgba(92,222,232,.16);color:#8FF3FA}
     }
     .money{min-width:0;padding:2px 0 8px}
     .money-k{font-size:12px;font-weight:650;color:var(--muted)}
@@ -114,6 +116,7 @@
     .money-bar i.hold{background:var(--c-stock)}
     .money-bar i.cash{background:var(--c-cash)}
     .money-bar i.oth{background:var(--c-fund)}
+    .money-bar i.fx{background:var(--c-fx)}
     .money-bar i.inc{background:var(--down)}
     .money-bar i.exp{background:var(--up)}
     .money-pair{display:grid;grid-template-columns:1fr 1fr;gap:8px}
@@ -243,7 +246,7 @@
     .dayh + .ev{border-top:none}
     .ev{display:flex;gap:10px;align-items:flex-start;padding:11px 0;border-top:.5px solid var(--sep)}
     .ev-dot{width:8px;height:8px;border-radius:50%;margin-top:7px;flex-shrink:0;background:var(--accent)}
-    .ev-dot.sell{background:var(--c-fund)}.ev-dot.dca{background:#4C84F5}.ev-dot.close{background:#B7AECB}.ev-dot.xfer{background:var(--c-other)}
+    .ev-dot.sell{background:var(--c-fund)}.ev-dot.dca{background:#4C84F5}.ev-dot.close{background:#B7AECB}.ev-dot.xfer{background:var(--c-other)}.ev-dot.fx{background:var(--c-fx)}
     .ev-bd{flex:1;min-width:0}
     .ev-tt{display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-weight:680;font-size:15px;line-height:1.35}
     .tag{display:inline-block;margin-left:4px;padding:1px 6px;border-radius:6px;font-size:11px;font-weight:750;vertical-align:1px}
@@ -252,12 +255,14 @@
     .tag.dca{background:#E7F0FF;color:#3A6FD8}
     .tag.close{background:#F1EEF7;color:#716B86}
     .tag.xfer{background:#FFE8F2;color:#D4548C}
+    .tag.fx{background:#E5F7FA;color:#0E7C8A}
     @media (prefers-color-scheme:dark){
       .tag.buy{background:rgba(183,166,255,.16);color:#D5CBFF}
       .tag.sell{background:rgba(61,220,151,.14);color:#8FF0C4}
       .tag.dca{background:rgba(90,140,255,.16);color:#B7D0FF}
       .tag.close{background:rgba(255,255,255,.06);color:#C8C0DC}
       .tag.xfer{background:rgba(255,155,192,.14);color:#FFC0D6}
+      .tag.fx{background:rgba(92,222,232,.16);color:#C8F7FB}
     }
     .ev-amt{font-weight:780;font-size:15px;white-space:nowrap;flex-shrink:0}
     .ev-amt.mute{color:var(--text2);font-weight:700}
@@ -387,6 +392,7 @@
       <button type="button" class="pill" data-f="sell" onclick="setBookFilter('sell')">卖出</button>
       <button type="button" class="pill" data-f="dca" onclick="setBookFilter('dca')">定投</button>
       <button type="button" class="pill" data-f="close" onclick="setBookFilter('close')">收盘</button>
+      <button type="button" class="pill" data-f="fx" onclick="setBookFilter('fx')">外汇</button>
       <button type="button" class="pill" data-f="xfer" onclick="setBookFilter('xfer')">转账</button>
     </div>
     <div class="card" id="bookCard">
@@ -423,11 +429,12 @@
       <div class="card">
         <div class="card-t">资产一览</div>
         <div id="mineStats"></div>
-        <p class="hint" style="margin:0 0 10px">总资产 = 投资持仓 + 投资闲钱 + 其他账户。账户之间互转不改变总资产，也不计入收支和投资盈亏。</p>
+        <p class="hint" style="margin:0 0 10px">总资产 = 投资持仓 + 投资闲钱 + 外汇交易 + 其他账户。账户之间互转不改变总资产，也不计入收支和投资盈亏。</p>
       </div>
       <div class="card">
         <div class="card-t"><span>我的账户</span>
           <span>
+            <button class="btn-sm" onclick="bindFx()">绑定交易复盘</button>
             <button class="btn-sm warn" onclick="openTransfer()">互转</button>
             <button class="btn-sm pri" onclick="openAccModal()">＋ 账户</button>
           </span>
@@ -513,6 +520,7 @@
           • 虚拟货币：Coinbase、Binance 等并行行情<br>
           • 添加持仓时输入代码或名称即可，类型和币种自动识别<br>
           • 投资账户 = 持仓市值 + 闲钱。买入、加仓、定投从闲钱扣，卖出、减仓、清仓回到闲钱；闲钱可与银行卡等账户互转（只能转出闲钱）。互转记在明细账本，不算收入、支出，也不算投资盈亏<br>
+          • 外汇交易账户可绑定交易复盘：余额自动等于复盘账户（美元），每日盈亏记入账本和盈亏统计，入金出金按转账处理<br>
           • 每天北京时间 6:00 后打开 App，自动记录上一交易日收盘盈亏；今日盈亏从买入价起算（今天新买的也按买入价算），休市的日子今日盈亏是 0<br>
           • 数据默认存在本机浏览器；在「我的 → 设置 → 多设备同步」开启后，也会保存到你自己的 GitHub 私密 Gist
         </p>
@@ -549,6 +557,7 @@
           <option value="alipay">支付宝</option>
           <option value="wechat">微信</option>
           <option value="invest">投资账户</option>
+          <option value="fx">外汇交易账户</option>
           <option value="cash">现金</option>
           <option value="other">其他</option>
         </select>
@@ -856,7 +865,7 @@ const CRYPTO_ALIAS={
   wbtc:'wbtc'
 };
 const CRYPTO_NAME={bitcoin:'比特币',ethereum:'以太坊',solana:'Solana',dogecoin:'狗狗币',usdt:'USDT',usdc:'USDC',binancecoin:'BNB',ripple:'XRP'};
-const TYPE_L={stock:'股票',fund:'基金',crypto:'虚拟货币',other:'其他'};
+const TYPE_L={stock:'股票',fund:'基金',crypto:'虚拟货币',other:'其他',fx:'外汇交易'};
 function typeLabel(t){ return TYPE_L[t]||t||''; }
 function isCnFundCode(code){ return /^(15|16)\d{4}$/.test(code)||/^(50|51|52|56|58)\d{4}$/.test(code); }
 function onlyDigits(s){ return String(s||'').replace(/\D/g,''); }
@@ -1255,6 +1264,8 @@ function renderWeek(){
   }
   let best='—', bestV=-Infinity, any=false;
   Object.keys(by).forEach(k=>{ any=true; if(by[k]>bestV){ bestV=by[k]; best=k; } });
+  const fxm=fxDayMap();
+  Object.keys(fxm).forEach(d=>{ if(d>=range.start&&d<=range.end){ pnl+=fxm[d]; any=true; if(fxm[d]>bestV){ bestV=fxm[d]; best='外汇'; } } });
   if(!any) best='—';
   let n=0;
   (S.positions||[]).forEach(p=>{(p.trades||[]).forEach(t=>{ if(t.date>=range.start&&t.date<=range.end) n++; });});
@@ -1267,8 +1278,9 @@ function renderWeek(){
 function renderAlloc(){
   const bar=document.getElementById('allocBar'), rows=document.getElementById('allocRows');
   if(!bar||!rows) return;
-  const spec=[['stock','股票','var(--c-stock)'],['fund','基金','var(--c-fund)'],['crypto','虚拟货币','var(--c-crypto)'],['cash','现金','var(--c-cash)'],['other','其他','var(--c-other)']];
-  const sums={stock:0,fund:0,crypto:0,cash:0,other:0};
+  const hasFx=fxAccounts().length>0;
+  const spec=[['stock','股票','var(--c-stock)'],['fund','基金','var(--c-fund)'],['crypto','虚拟货币','var(--c-crypto)'],['cash','现金','var(--c-cash)']].concat(hasFx?[['fx','外汇交易','var(--c-fx)']]:[]).concat([['other','其他','var(--c-other)']]);
+  const sums={stock:0,fund:0,crypto:0,cash:0,fx:0,other:0};
   (S.positions||[]).forEach(p=>{
     if((+p.qty||0)<=1e-10) return;
     const c=calcPos(p);
@@ -1277,6 +1289,7 @@ function renderAlloc(){
     sums[k]+=v;
   });
   sums.cash=investAccounts().reduce((s,a)=>s+idleCNY(a),0);
+  sums.fx=assetTotals().fx;
   const total=spec.reduce((s,x)=>s+sums[x[0]],0);
   bar.innerHTML=total>0?spec.map(x=>{ const w=sums[x[0]]/total*100; return w>0?`<i style="width:${w}%;background:${x[2]}"></i>`:''; }).join(''):'';
   rows.innerHTML=spec.map(x=>{
@@ -1336,6 +1349,22 @@ function buildBookEvents(){
       amount=+t.amount||0;
     }else return;
     ev.push({date:t.date,sort:t.ts||0,filter:'xfer',tag:'转账',tagCls:'xfer',dot:'xfer',title,sub,amount,tone:'mute'});
+  });
+  fxAccounts().forEach(a=>{
+    const fx=a.fx||{};
+    (fx.days||[]).forEach(d=>{
+      if(!d||!d.date) return;
+      ev.push({date:d.date, sort:8e15, filter:'fx', tag:'外汇', tagCls:'fx', dot:'fx', title:'外汇盈亏',
+        sub:'$'+fmt(d.pnlUSD)+' · 汇率 '+fmtRate(d.rate), amount:+d.pnlCNY||0, tone:'pnl'});
+    });
+    (fx.flows||[]).forEach(f=>{
+      if(!f||!f.date) return;
+      const usd=+f.amountUSD||0, cny=Math.abs(usd)*(+f.rate||0);
+      const other=f.otherId?accNameById(f.otherId):'';
+      const title=usd>=0?(other?other+' → '+a.name:a.name+' 入金'):(other?a.name+' → '+other:a.name+' 出金');
+      ev.push({date:f.date, sort:f.id?1:0, filter:'xfer', tag:'转账', tagCls:'xfer', dot:'xfer', title,
+        sub:(f.note||'外汇资金')+' · $'+fmt(Math.abs(usd)), amount:cny, tone:'mute'});
+    });
   });
   return ev;
 }
@@ -1611,6 +1640,7 @@ async function refreshQuotes(){
   }
   S.lastRefresh=Date.now();
   save(); renderAll();
+  await syncFx();
   btn.disabled=false; btn.querySelector('span').textContent='刷新';
   const rateNote=fr.ok?'':'\n汇率拉取失败，用上次汇率';
   toast((fail?`成功 ${ok}，失败 ${fail}\n`+fails.slice(0,2).join('\n'):`刷新成功 ${ok} 个`)+rateNote, (fail||!fr.ok)?5000:2500);
@@ -1757,8 +1787,9 @@ function accountMvCNY(acc){
 function assetTotals(){
   const inv=investValue();
   const idle=investAccounts().reduce((s,a)=>s+idleCNY(a),0);
-  const other=(S.accounts||[]).filter(a=>!isInvestAcc(a)).reduce((s,a)=>s+toCNY(+a.balance||0, accCurrency(a)),0);
-  return {assets:other+idle+inv.value, idle, mv:inv.value, other, inv};
+  const fx=fxAccounts().reduce((s,a)=>s+toCNY(+a.balance||0, accCurrency(a)),0);
+  const other=(S.accounts||[]).filter(a=>!isInvestAcc(a)&&!isFxAcc(a)).reduce((s,a)=>s+toCNY(+a.balance||0, accCurrency(a)),0);
+  return {assets:other+idle+inv.value+fx, idle, mv:inv.value, other, fx, inv};
 }
 /** 买入为负、卖出为正，单位是持仓币种（含手续费） */
 function tradeCashNative(t){
@@ -1813,6 +1844,178 @@ function migrateInvestCash(){
   });
   return ch;
 }
+/** 与交易复盘 js/core.js 的 calcPnL 一致：填了实际盈亏就用它减手续费，否则 (价差 × 数量 × 杠杆 − 手续费) */
+function fxNormSide(v){
+  const s=String(v||'').trim().toLowerCase();
+  if(/^(多|做多|买|买入|buy|long|b)/.test(s)) return '多';
+  if(/^(空|做空|卖|卖出|sell|short|s)/.test(s)) return '空';
+  return '';
+}
+function fxCalcPnL(t){
+  t=t||{};
+  const fee=Number(t.fee)||0;
+  const profit=t.profit;
+  if(profit!==null&&profit!==''&&profit!==undefined&&isFinite(Number(profit))) return Math.round((Number(profit)-fee)*100)/100;
+  const qty=Number(t.qty)||0, entry=Number(t.entryPrice)||0, exit=Number(t.exitPrice)||0, lev=Number(t.leverage)||1;
+  const dir=fxNormSide(t.side)==='空'?-1:1;
+  return Math.round(((exit-entry)*dir*qty*lev-fee)*100)/100;
+}
+function fxDayOfTrade(t){ const m=String((t&&(t.closeTime||t.date))||'').match(/^(\d{4}-\d{2}-\d{2})/); return m?m[1]:''; }
+function fxSummaryFromPayload(obj){
+  let trades=[], account=null, updatedAt=0;
+  if(Array.isArray(obj)) trades=obj;
+  else if(obj&&typeof obj==='object'){
+    trades=Array.isArray(obj.trades)?obj.trades:[];
+    account=obj.account||null;
+    updatedAt=Number(obj.updatedAt)||Number(account&&account.updatedAt)||0;
+  } else return null;
+  const by={}; let realized=0;
+  trades.filter(t=>t&&!t.deleted).forEach(t=>{
+    const p=fxCalcPnL(t); realized+=p;
+    const d=fxDayOfTrade(t); if(d) by[d]=(by[d]||0)+p;
+  });
+  realized=Math.round(realized*100)/100;
+  const flows=(account&&Array.isArray(account.cashflows)?account.cashflows:[]).filter(x=>x&&x.id).map(x=>({id:String(x.id), date:String(x.date||'').slice(0,10), amount:+x.amount||0, note:String(x.note||'')}));
+  const net=Math.round(flows.reduce((s,x)=>s+(+x.amount||0),0)*100)/100;
+  const initial=account?+(account.initialBalance||0):0;
+  return {currency:(account&&account.currency)||'USD', initialBalance:initial, netDeposits:net, realizedPnl:realized,
+    balance:Math.round((initial+net+realized)*100)/100,
+    daily:Object.keys(by).sort().map(date=>({date, pnl:Math.round(by[date]*100)/100})),
+    cashflows:flows, updatedAt:updatedAt||Date.now()};
+}
+function fxReadLocalSummary(){
+  try{
+    const o=JSON.parse(localStorage.getItem('mt5_journal_account_summary')||'null');
+    if(!o||typeof o!=='object'||!isFinite(+o.balance)) return null;
+    return {currency:o.currency||'USD', initialBalance:+o.initialBalance||0, netDeposits:+o.netDeposits||0, realizedPnl:+o.realizedPnl||0, balance:+o.balance,
+      daily:Array.isArray(o.daily)?o.daily.filter(d=>d&&d.date).map(d=>({date:String(d.date).slice(0,10), pnl:+d.pnl||0})):[],
+      cashflows:Array.isArray(o.cashflows)?o.cashflows.filter(x=>x&&x.id).map(x=>({id:String(x.id), date:String(x.date||'').slice(0,10), amount:+x.amount||0, note:String(x.note||'')})): [],
+      updatedAt:Number(o.updatedAt)||0};
+  }catch(e){ return null; }
+}
+async function fxFetchGistSummary(){
+  let token='', gistId='';
+  try{ const st=JSON.parse(localStorage.getItem('mt5_journal_settings')||'{}'); token=(st.sync&&st.sync.token)||''; gistId=(st.sync&&st.sync.gistId)||''; }catch(e){}
+  if(!token) token=localStorage.getItem('am_sync_token')||'';
+  token=String(token||'').trim(); gistId=String(gistId||'').trim();
+  if(!token) return null;
+  const headers={Accept:'application/vnd.github+json', Authorization:'Bearer '+token};
+  const FILE='mt5-journal-data.json';
+  if(!gistId){
+    const list=await (await fetch('https://api.github.com/gists?per_page=100',{headers,cache:'no-store'})).json();
+    if(!Array.isArray(list)) throw new Error('GitHub');
+    const g=list.find(x=>x&&x.files&&x.files[FILE]);
+    if(!g) return null; gistId=g.id;
+  }
+  const res=await fetch('https://api.github.com/gists/'+encodeURIComponent(gistId),{headers,cache:'no-store'});
+  if(!res.ok) throw new Error('GitHub '+res.status);
+  const g=await res.json();
+  const f=g.files&&g.files[FILE]; if(!f) return null;
+  let text=f.content;
+  if(!text&&f.raw_url) text=await (await fetch(f.raw_url,{cache:'no-store'})).text();
+  if(!text) return null;
+  return fxSummaryFromPayload(JSON.parse(text));
+}
+function isFxAcc(a){ return !!a && a.type==='fx'; }
+function fxAccounts(){ return (S.accounts||[]).filter(isFxAcc); }
+function fxEnsure(a){ if(!a.fx||typeof a.fx!=='object') a.fx={bound:true,days:[],flows:[]}; a.fx.days=a.fx.days||[]; a.fx.flows=a.fx.flows||[]; return a.fx; }
+function fxCurrentRate(){ const r=+(S.rates&&S.rates.USD); return r>0?r:7.15; }
+function fxDayMap(){ const m={}; fxAccounts().forEach(a=>{ ((a.fx&&a.fx.days)||[]).forEach(d=>{ if(d&&d.date) m[d.date]=(m[d.date]||0)+(+d.pnlCNY||0); }); }); return m; }
+function fxTodayCNY(){ const m=fxDayMap(); return Object.prototype.hasOwnProperty.call(m,today())?m[today()]:null; }
+function fxCumCNY(){ const m=fxDayMap(); return Object.keys(m).reduce((s,k)=>s+(+m[k]||0),0); }
+function fxReverseFlow(flow){
+  if(!flow||!flow.applied) return;
+  const other=flow.otherId&&S.accounts.find(x=>x.id===flow.otherId);
+  if(other&&!isFxAcc(other)) other.balance=roundMoney((+other.balance||0)-(+flow.appliedDelta||0));
+  flow.applied=false; flow.appliedDelta=0;
+}
+function fxApplyFlow(acc, flow){
+  if(!flow||flow.applied) return;
+  const fx=fxEnsure(acc);
+  if(!flow.rate) flow.rate=fxCurrentRate();
+  const otherId=fx.flowAccId||'';
+  if(!otherId){ flow.otherId=''; flow.appliedDelta=0; flow.applied=true; return; }
+  const other=S.accounts.find(x=>x.id===otherId&&!isFxAcc(x)&&!isInvestAcc(x));
+  if(!other){ flow.otherId=''; flow.appliedDelta=0; flow.applied=true; return; }
+  const delta=-convertAmt((+flow.amountUSD||0)*flow.rate,'CNY',accCurrency(other));
+  other.balance=roundMoney((+other.balance||0)+delta);
+  flow.otherId=other.id; flow.appliedDelta=delta; flow.applied=true;
+}
+function fxSetFlowAcc(accId, otherId){
+  const a=S.accounts.find(x=>x.id===accId); if(!a||!isFxAcc(a)) return;
+  const fx=fxEnsure(a);
+  fx.flows.forEach(fxReverseFlow);
+  fx.flowAccId=otherId||'';
+  fx.flows.forEach(f=>{ f.applied=false; fxApplyFlow(a,f); });
+  save(); renderAll();
+}
+function applyFxSnapshot(acc, snap){
+  const fx=fxEnsure(acc);
+  acc.currency='USD'; acc.type='fx';
+  acc.balance=roundMoney(+snap.balance||0);
+  fx.bound=true; fx.error=''; fx.syncedAt=Date.now(); fx.summaryAt=Number(snap.updatedAt)||fx.syncedAt; fx.source=snap.source||'';
+  fx.initialBalance=+snap.initialBalance||0; fx.netDeposits=+snap.netDeposits||0; fx.realizedPnl=+snap.realizedPnl||0;
+  const old={}; fx.days.forEach(d=>{ if(d&&d.date) old[d.date]=d; });
+  const rateNow=fxCurrentRate();
+  fx.days=(snap.daily||[]).filter(d=>d&&d.date).map(d=>{
+    const date=String(d.date).slice(0,10), prev=old[date], rate=prev&&prev.rate?+prev.rate:rateNow;
+    const pnlUSD=Math.round((+d.pnl||0)*100)/100;
+    return {date, pnlUSD, rate, pnlCNY:roundMoney(pnlUSD*rate)};
+  });
+  const incoming=new Map((snap.cashflows||[]).filter(c=>c&&c.id).map(c=>[String(c.id), c]));
+  const keep=[];
+  fx.flows.forEach(f=>{
+    const c=incoming.get(String(f.id));
+    if(!c){ fxReverseFlow(f); return; }
+    const amt=+c.amount||0;
+    if(Math.abs((+f.amountUSD||0)-amt)>0.001){ fxReverseFlow(f); f.amountUSD=amt; f.date=String(c.date||'').slice(0,10); f.note=c.note||''; f.applied=false; fxApplyFlow(acc,f); }
+    else { f.date=String(c.date||f.date||'').slice(0,10); f.note=c.note||''; if(!f.applied) fxApplyFlow(acc,f); }
+    keep.push(f); incoming.delete(String(f.id));
+  });
+  incoming.forEach(c=>{
+    const f={id:String(c.id), date:String(c.date||'').slice(0,10), amountUSD:+c.amount||0, note:c.note||'', rate:rateNow, applied:false};
+    fxApplyFlow(acc,f); keep.push(f);
+  });
+  fx.flows=keep;
+}
+let fxSyncing=false;
+async function syncFx(opts){
+  opts=opts||{};
+  const accs=fxAccounts().filter(a=>!a.fx||a.fx.bound!==false);
+  if(!accs.length) return {ok:false, empty:true};
+  if(fxSyncing) return {ok:false, busy:true};
+  fxSyncing=true;
+  try{
+    let local=null, remote=null, err='';
+    try{ local=fxReadLocalSummary(); }catch(e){ local=null; }
+    try{ remote=await fxFetchGistSummary(); }catch(e){ err=(e&&e.message)||'同步失败'; remote=null; }
+    let snap=null, source='';
+    if(local&&remote){ if((Number(remote.updatedAt)||0)>(Number(local.updatedAt)||0)){ snap=remote; source='gist'; } else { snap=local; source='local'; } }
+    else if(local){ snap=local; source='local'; }
+    else if(remote){ snap=remote; source='gist'; }
+    if(!snap){
+      const msg=err||'没有读到交易复盘数据，余额保持不变';
+      accs.forEach(a=>{ const fx=fxEnsure(a); fx.error=msg; });
+      save(); renderAll();
+      if(opts.manual) toast(msg);
+      return {ok:false, error:msg};
+    }
+    snap.source=source;
+    accs.forEach(a=>applyFxSnapshot(a, snap));
+    save(); renderAll();
+    if(opts.manual) toast('外汇账户已同步');
+    return {ok:true, source, balance:accs[0].balance};
+  }finally{ fxSyncing=false; }
+}
+function bindFx(){
+  let a=fxAccounts()[0];
+  if(!a){
+    a={id:uid(), name:'外汇交易账户', type:'fx', currency:'USD', balance:0, createdAt:Date.now(), fx:{bound:true, days:[], flows:[], error:''}};
+    S.accounts.push(a);
+  } else { a.type='fx'; a.currency='USD'; fxEnsure(a).bound=true; }
+  save();
+  return syncFx({manual:true});
+}
 function moneyBar(parts){
   const sum=parts.reduce((s,p)=>s+(p.v>0?p.v:0),0);
   const segs=sum>0?parts.filter(p=>p.v>0).map(p=>`<i class="${p.cls}" style="width:${(p.v/sum*100).toFixed(2)}%"></i>`).join(''):'';
@@ -1858,9 +2061,10 @@ function renderAssetMix(id, withDebt){
   const debt=debtValue();
   el.innerHTML=moneyCard({
     k:'总资产', main:'¥'+fmt(t.assets),
-    bar:moneyBar([{v:t.mv,cls:'hold'},{v:t.idle,cls:'cash'},{v:t.other,cls:'oth'}]),
+    bar:moneyBar([{v:t.mv,cls:'hold'},{v:t.idle,cls:'cash'},{v:t.fx,cls:'fx'},{v:t.other,cls:'oth'}]),
     pair:[{l:'投资持仓',v:'¥'+fmt(t.mv)},{l:'投资闲钱',v:'¥'+fmt(t.idle)}],
-    extra:`<div class="money-line"><span>其他账户</span><b>¥${fmt(t.other)}</b></div>`
+    extra:(fxAccounts().length?`<div class="money-line"><span>外汇交易</span><b>¥${fmt(t.fx)}</b></div>`:'')
+      +`<div class="money-line"><span>其他账户</span><b>¥${fmt(t.other)}</b></div>`
       +(withDebt?`<div class="money-pair" style="margin-top:8px"><div><div class="l">待还</div><div class="v down">¥${fmt(debt)}</div></div><div><div class="l">持仓数</div><div class="v">${n}</div></div></div>`:'')
   });
 }
@@ -1962,7 +2166,7 @@ function renderRates(){
   const r=S.rates||{};
   e.textContent=`汇率 USD ${fmtRate(r.USD)} · HKD ${fmtRate(r.HKD)}（${r.updatedAt?rateTimeStr(r.updatedAt)+(r.source?' · '+r.source:''):'未记录更新时间'}）`;
 }
-document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible') autoDailyClose(); });
+document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible'){ autoDailyClose(); syncFx(); } });
 setInterval(()=>autoDailyClose(),10*60e3);
 
 // ===== Render =====
@@ -1974,11 +2178,14 @@ function renderAll(){
   document.getElementById('netWorth').textContent='¥'+fmt(net);
   document.getElementById('totalAssets').textContent='¥'+fmt(assets);
   document.getElementById('totalDebt').textContent='¥'+fmt(debt);
+  const fxT=fxTodayCNY();
+  const dayShow=inv.day!=null?(inv.day+(fxT||0)):(fxT!=null?fxT:null);
   const tp=document.getElementById('todayPnl');
-  if(inv.day!=null){ tp.textContent=fmtP(inv.day); tp.className='sum-v sm '+(inv.day>=0?'up':'down'); }
+  if(dayShow!=null){ tp.textContent=fmtP(dayShow); tp.className='sum-v sm '+(dayShow>=0?'up':'down'); }
   else { tp.textContent='需刷新行情'; tp.className='sum-v sm neu'; }
   const ip=document.getElementById('investPnl');
-  ip.textContent=fmtP(inv.cum); ip.className='sum-v sm '+(inv.cum>=0?'up':'down');
+  const cumShow=inv.cum+fxCumCNY();
+  ip.textContent=fmtP(cumShow); ip.className='sum-v sm '+(cumShow>=0?'up':'down');
   document.getElementById('lastU').textContent=S.lastRefresh?'上次刷新：'+new Date(S.lastRefresh).toLocaleString('zh-CN'):'尚未刷新';
   renderRates();
 
@@ -1986,9 +2193,12 @@ function renderAll(){
   renderAssetMix('homeStats', true);
   renderAssetMix('mineStats', false);
   const heroMix=document.getElementById('heroMix');
-  if(heroMix) heroMix.innerHTML=moneyBar([{v:mix.mv,cls:'hold'},{v:mix.idle,cls:'cash'},{v:mix.other,cls:'oth'}])
-    +`<div class="money-pair"><div><div class="l">投资持仓</div><div class="v">¥${fmt(mix.mv)}</div></div><div><div class="l">投资闲钱</div><div class="v">¥${fmt(mix.idle)}</div></div></div>`
-    +`<div class="money-line"><span>其他账户</span><b>¥${fmt(mix.other)}</b></div>`;
+  if(heroMix){
+    const fxLine=fxAccounts().length?`<div class="money-line"><span>外汇交易</span><b>¥${fmt(mix.fx)}</b></div>`:'';
+    heroMix.innerHTML=moneyBar([{v:mix.mv,cls:'hold'},{v:mix.idle,cls:'cash'},{v:mix.fx,cls:'fx'},{v:mix.other,cls:'oth'}])
+      +`<div class="money-pair"><div><div class="l">投资持仓</div><div class="v">¥${fmt(mix.mv)}</div></div><div><div class="l">投资闲钱</div><div class="v">¥${fmt(mix.idle)}</div></div></div>`
+      +fxLine+`<div class="money-line"><span>其他账户</span><b>¥${fmt(mix.other)}</b></div>`;
+  }
   // 本月收支
   const ym=today().slice(0,7);
   let minc=0, mexp=0;
@@ -2009,6 +2219,8 @@ function renderAll(){
 
   const items=S.positions.filter(p=>(+p.qty||0)>1e-10).map(p=>{const c=calcPos(p); return {name:p.name,day:c.dayPnlCNY,cum:c.cumulativeCNY};})
     .filter(x=>x.day!=null).sort((a,b)=>Math.abs(b.day)-Math.abs(a.day));
+  if(fxT!=null) items.push({name:'外汇交易', day:fxT});
+  items.sort((a,b)=>Math.abs(b.day)-Math.abs(a.day));
   const box=document.getElementById('dayContrib');
   if(!items.length) box.innerHTML='<div class="empty">刷新行情后显示</div>';
   else box.innerHTML=items.map(it=>`<div class="item"><div class="item-top"><div class="item-name">${esc(it.name)}</div><div class="item-pnl ${it.day>=0?'up':'down'}">${fmtP(it.day)}</div></div></div>`).join('');
@@ -2044,6 +2256,30 @@ function renderAccounts(){
   const typeName={bank:'银行卡',alipay:'支付宝',wechat:'微信',invest:'投资',cash:'现金',other:'其他'};
   if(!list.length){ el.innerHTML='<div class="empty">点击 ＋ 添加银行卡、支付宝或投资账户</div>'; }
   else el.innerHTML=list.map(a=>{
+    if(isFxAcc(a)){
+      const fx=a.fx||{};
+      const cny=toCNY(+a.balance||0,'USD');
+      const sign=n=>n<0?'-':'';
+      const usd=n=>sign(n)+money(Math.abs(+n||0),'USD');
+      const others=S.accounts.filter(x=>!isFxAcc(x)&&!isInvestAcc(x));
+      const sel=`<div class="form-g" style="margin-top:8px"><label>入金/出金对应账户</label><select class="form-c" onchange="fxSetFlowAcc('${a.id}', this.value)"><option value="">不对应其他账户</option>${others.map(o=>`<option value="${o.id}" ${(fx.flowAccId||'')===o.id?'selected':''}>${esc(o.name)}</option>`).join('')}</select></div>`;
+      const syncTxt=fx.syncedAt?('同步 '+rateTimeStr(fx.syncedAt)):'尚未同步';
+      const rateTxt='汇率 USD '+fmtRate(S.rates&&S.rates.USD)+' · '+(S.rates&&S.rates.updatedAt?rateTimeStr(S.rates.updatedAt):'未更新');
+      return `<div class="item">
+        <div class="item-name">${esc(a.name)} <span class="badge fx">外汇交易</span></div>
+        ${moneyCard({compact:true, k:'美元余额', main:money(+a.balance||0,'USD'),
+          pair:[{l:'已实现盈亏', v:usd(fx.realizedPnl), cls:(+fx.realizedPnl||0)>=0?'up':'down'}, {l:'净入金', v:usd(fx.netDeposits)}],
+          extra:`<p class="hint" style="margin-top:6px">折合人民币 ¥${fmt(cny)}</p>`})}
+        ${sel}
+        <p class="hint">${esc(syncTxt)} · ${esc(rateTxt)}</p>
+        ${fx.error?`<p class="hint" style="color:var(--warning)">${esc(fx.error)}</p>`:''}
+        <div class="btn-row">
+          <button class="btn-sm" onclick="syncFx({manual:true})">同步</button>
+          <button class="btn-sm pri" onclick="editAcc('${a.id}')">编辑</button>
+          <button class="btn-sm dan" onclick="delAcc('${a.id}')">删除</button>
+        </div>
+      </div>`;
+    }
     if(isInvestAcc(a)){
       const mv=accountMvCNY(a), idle=idleCNY(a), cur=accCurrency(a);
       const idleTxt=cur==='CNY'?('¥'+fmt(idleCash(a))):money(idleCash(a),cur);
@@ -2216,15 +2452,19 @@ function renderCal(){
   const first=new Date(calY,calM,1).getDay();
   const days=new Date(calY,calM+1,0).getDate();
   const map={}; S.history.forEach(h=>{ if(h.date.startsWith(`${calY}-${String(calM+1).padStart(2,'0')}`)) map[h.date]=h; });
+  const fxm=fxDayMap();
   let html='';
   for(let i=0;i<first;i++) html+='<div class="cal-d mute"></div>';
   for(let d=1;d<=days;d++){
     const ds=`${calY}-${String(calM+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
     const h=map[ds];
+    const hasFx=Object.prototype.hasOwnProperty.call(fxm, ds);
+    const total=(h?+h.totalPnl||0:0)+(hasFx?fxm[ds]:0);
+    const has=!!h||hasFx;
     let cls='cal-d';
-    if(h){ cls+=' has '+(h.totalPnl>=0?'up':'down'); }
+    if(has){ cls+=' has '+(total>=0?'up':'down'); }
     if(calSel===ds) cls+=' sel';
-    html+=`<div class="${cls}" onclick="selDay('${ds}')">${d}${h?`<div style="font-size:10px;font-weight:500">${fmtP(h.totalPnl).replace('+','')}</div>`:''}</div>`;
+    html+=`<div class="${cls}" onclick="selDay('${ds}')">${d}${has?`<div>${fmtP(total).replace('+','')}</div>`:''}</div>`;
   }
   document.getElementById('calBody').innerHTML=html;
   if(calSel) showDay(calSel); else document.getElementById('calDetail').innerHTML='<div class="empty">点击有颜色的日期查看当日盈亏明细</div>';
@@ -2242,6 +2482,13 @@ function showDay(ds){
     }).filter(d=>d.dayPnl!=null).sort((a,b)=>Math.abs(b.dayPnl)-Math.abs(a.dayPnl));
     const total=details.reduce((s,d)=>s+(d.dayPnl||0),0);
     h={date:ds,totalPnl:total,details,live:true};
+  }
+  const fxm=fxDayMap();
+  if(Object.prototype.hasOwnProperty.call(fxm, ds)){
+    const base=h?Object.assign({}, h, {details:[...(h.details||[])]}):{date:ds, totalPnl:0, details:[]};
+    base.totalPnl=(+base.totalPnl||0)+fxm[ds];
+    base.details.push({name:'外汇交易', type:'fx', dayPnl:fxm[ds]});
+    h=base;
   }
   if(!h){ el.innerHTML='<div class="empty">该日无记录<br><span class="hint">休市日或当天还没持仓时不会有记录</span></div>'; return; }
   let details=h.details||[];
@@ -2267,16 +2514,23 @@ function showDay(ds){
 
 function fillSelects(){
   const la=document.getElementById('ledAcc');
-  if(la) la.innerHTML=S.accounts.filter(a=>!isInvestAcc(a)).map(a=>`<option value="${a.id}">${esc(a.name)}</option>`).join('')||'<option value="">请先添加账户</option>';
+  if(la) la.innerHTML=S.accounts.filter(a=>!isInvestAcc(a)&&!isFxAcc(a)).map(a=>`<option value="${a.id}">${esc(a.name)}</option>`).join('')||'<option value="">请先添加账户</option>';
   const dp=document.getElementById('dcaPos');
   if(dp) dp.innerHTML=S.positions.filter(p=>p.type==='fund').map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('')||'<option value="">请先添加基金持仓</option>';
 }
 
 // ===== CRUD =====
 function syncAccForm(){
-  const inv=document.getElementById('accType').value==='invest';
-  const lab=document.getElementById('accBalLab'); if(lab) lab.textContent=inv?'闲钱':'余额';
-  const hint=document.getElementById('accBalHint'); if(hint) hint.style.display=inv?'block':'none';
+  const t=document.getElementById('accType').value;
+  const inv=t==='invest', fx=t==='fx';
+  const lab=document.getElementById('accBalLab'); if(lab) lab.textContent=inv?'闲钱':(fx?'余额（美元）':'余额');
+  const hint=document.getElementById('accBalHint');
+  if(hint){
+    hint.style.display=(inv||fx)?'block':'none';
+    hint.textContent=fx?'绑定交易复盘后，这里自动等于复盘账户余额（美元），亏损就减少、盈利就增加。':'这里填还能用来买的闲钱，不含已经买成持仓的钱。买入会从这里扣，卖出加回。';
+  }
+  const cur=document.getElementById('accCur');
+  if(cur){ if(fx) cur.value='USD'; cur.disabled=!!fx; }
 }
 function openAccModal(){ document.getElementById('accId').value=''; document.getElementById('accTitle').textContent='添加账户';
   document.getElementById('accName').value=''; document.getElementById('accBal').value='0'; document.getElementById('accType').value='bank';
@@ -2284,7 +2538,7 @@ function openAccModal(){ document.getElementById('accId').value=''; document.get
   syncAccForm(); openM('accModal'); }
 function editAcc(id){ const a=S.accounts.find(x=>x.id===id); if(!a)return;
   document.getElementById('accId').value=id; document.getElementById('accTitle').textContent='编辑账户';
-  document.getElementById('accName').value=a.name; document.getElementById('accType').value=isInvestAcc(a)?'invest':(a.type||'other');
+  document.getElementById('accName').value=a.name; document.getElementById('accType').value=isFxAcc(a)?'fx':(isInvestAcc(a)?'invest':(a.type||'other'));
   document.getElementById('accBal').value=isInvestAcc(a)?idleCash(a):(a.balance??0);
   const cur=document.getElementById('accCur'); if(cur) cur.value=accCurrency(a);
   syncAccForm(); openM('accModal'); }
@@ -2295,14 +2549,17 @@ function saveAcc(){
   if(!data.name) return toast('请填名称');
   if(data.name==='投资账户') data.type='invest';
   if(data.type==='invest'||data.name==='投资账户') data.cashInited=true;
-  if(id){ const i=S.accounts.findIndex(a=>a.id===id); if(i>=0) S.accounts[i]={...S.accounts[i],...data}; }
-  else S.accounts.push({id:uid(),...data,createdAt:Date.now()});
+  if(data.type==='fx') data.currency='USD';
+  let created=null;
+  if(id){ const i=S.accounts.findIndex(a=>a.id===id); if(i>=0){ if(data.type==='fx'&&!S.accounts[i].fx) data.fx={bound:true,days:[],flows:[]}; S.accounts[i]={...S.accounts[i],...data}; } }
+  else { created={id:uid(),...data,createdAt:Date.now()}; if(created.type==='fx') created.fx={bound:true,days:[],flows:[]}; S.accounts.push(created); }
   save(); closeM('accModal'); renderAll(); toast('已保存');
+  if(data.type==='fx') syncFx({manual:true});
 }
 function delAcc(id){ if(!confirm('删除账户？'))return; S.accounts=S.accounts.filter(a=>a.id!==id); save(); renderAll(); }
 
 /** 任意账户互转。投资账户只能转出闲钱，持仓留在账户里。 */
-function xferAccounts(){ return S.accounts||[]; }
+function xferAccounts(){ return (S.accounts||[]).filter(a=>!isFxAcc(a)); }
 function accOptionLabel(a){
   return esc(a.name)+'（'+(isInvestAcc(a)?'闲钱 ':'')+money(availOf(a), accCurrency(a))+'）';
 }
@@ -2679,7 +2936,7 @@ function saveLedger(e){
   const date=document.getElementById('ledDate').value||today();
   if(!accId) return toast('请先添加账户');
   const acc=S.accounts.find(a=>a.id===accId);
-  if(acc && !isInvestAcc(acc)){
+  if(acc && !isInvestAcc(acc) && !isFxAcc(acc)){
     if(type==='expense') acc.balance=(+acc.balance||0)-amount;
     else if(type==='income') acc.balance=(+acc.balance||0)+amount;
   }
@@ -2714,7 +2971,7 @@ function setQuickAcc(id){ S.quickAccId=id||''; save(); }
 function quickLink(){ return location.origin+location.pathname.replace(/[^/]*$/,'')+'quick.html'; }
 function renderQuick(){
   const sel=document.getElementById('qaAcc'); if(!sel) return;
-  const accs=S.accounts.filter(a=>!isInvestAcc(a));
+  const accs=S.accounts.filter(a=>!isInvestAcc(a)&&!isFxAcc(a));
   const cur=(AMQuick.pickAccount(S,'')||{}).id||'';
   sel.innerHTML=accs.map(a=>`<option value="${a.id}" ${a.id===cur?'selected':''}>${esc(a.name)}</option>`).join('')||'<option value="">请先添加账户</option>';
   document.getElementById('qaLink').textContent=quickLink();
@@ -2767,14 +3024,14 @@ function switchTab(name){
 }
 document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>switchTab(t.dataset.t)));
 
-window.__am={classifyLocal,pickSuggest,parseHint,mapHit,confirmAsset,buildBookEvents,goalTargetOf,weekBounds,MILESTONES,isCnFundCode,fallbackGuess,confirmSix,isInvestAcc,idleCash,assetTotals,convertAmt,migrateInvestCash,raw:()=>S};
+window.__am={classifyLocal,pickSuggest,parseHint,mapHit,confirmAsset,buildBookEvents,goalTargetOf,weekBounds,MILESTONES,isCnFundCode,fallbackGuess,confirmSix,isInvestAcc,idleCash,assetTotals,convertAmt,migrateInvestCash,fxCalcPnL,fxSummaryFromPayload,fxReadLocalSummary,raw:()=>S};
 load();
 handleUrlAdd();
 document.getElementById('ledDate').value=today();
 renderAll();
 if(location.hash==='#settings') switchTab('settings');
 fetchRates().then(()=>{ save(); renderRates(); });
-renderAutoU(); setTimeout(()=>autoDailyClose(),2500);
+renderAutoU(); setTimeout(()=>autoDailyClose(),2500); setTimeout(()=>syncFx(),800);
 </script>
 <script src="sync.js"></script>
 <script>
