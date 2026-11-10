@@ -23,7 +23,7 @@
       --text:#1C1433; --text2:#4A4360; --muted:#8E87A3; --sep:rgba(70,50,120,.10);
       --danger:#E5484D; --success:#12A36A; --warning:#C4841D;
       --up:#E5484D; --down:#12A36A;
-      --c-stock:#6C4DFF; --c-fund:#2FBF86; --c-crypto:#F0A202; --c-other:#F27BA8;
+      --c-stock:#6C4DFF; --c-fund:#2FBF86; --c-crypto:#F0A202; --c-other:#F27BA8; --c-cash:#3D7DFF;
       --radius:20px; --ease:cubic-bezier(.32,.72,0,1);
       --tabbar:62px; --sb:env(safe-area-inset-bottom,0px);
       --shadow:0 10px 30px rgba(72,48,140,.07);
@@ -35,7 +35,7 @@
         --text:#F6F3FF; --text2:#D9D2EE; --muted:#A79FBE; --sep:rgba(190,170,255,.14);
         --danger:#FF6B6E; --success:#3DDC97; --warning:#E3B341;
         --up:#FF6B6E; --down:#3DDC97;
-        --c-stock:#B7A6FF; --c-fund:#3DDC97; --c-crypto:#F5C451; --c-other:#FF9BC0;
+        --c-stock:#B7A6FF; --c-fund:#3DDC97; --c-crypto:#F5C451; --c-other:#FF9BC0; --c-cash:#8FB4FF;
         --shadow:0 10px 30px rgba(0,0,0,.28);
       }
     }
@@ -67,6 +67,9 @@
     .hero-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px 12px;margin-top:14px}
     .hero-grid .sum-l{font-size:12px}
     .hero-grid .sum-v{font-size:16px;font-weight:700;margin-top:1px}
+    .hero-split{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:12px;padding-top:12px;border-top:1px solid rgba(255,255,255,.2)}
+    .hero-split .sum-l{font-size:11px}
+    .hero-split .sum-v{font-size:14px;font-weight:700;margin-top:1px}
     .hero .up{color:#fff}.hero .down{color:#C9FFE6}.hero .neu{color:rgba(255,255,255,.82);font-size:14px!important;font-weight:600}
 
     .tabs{position:fixed;left:50%;transform:translateX(-50%);bottom:0;width:100%;max-width:480px;z-index:60;display:flex;justify-content:space-around;
@@ -97,9 +100,12 @@
     .badge.crypto{background:rgba(240,162,2,.16);color:#C4841D}
     .badge.other{background:rgba(242,123,168,.16);color:#D4548C}
     .badge.stock{background:var(--accent-soft);color:var(--accent)}
+    .badge.invest{background:rgba(61,125,255,.14);color:#2F6FE0}
     @media (prefers-color-scheme:dark){
       .badge.fund{color:#3DDC97}.badge.crypto{color:#F5C451}.badge.other{color:#FF9BC0}
+      .badge.invest{background:rgba(143,180,255,.16);color:#B7D0FF}
     }
+    .stat-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;padding-bottom:8px}
 
     .btn-row{display:flex;gap:12px;margin-top:8px;flex-wrap:wrap}
     .btn-sm{font:inherit;font-size:13px;padding:0;border:none;background:none;cursor:pointer;color:var(--accent);font-weight:650}
@@ -266,6 +272,7 @@
         <div><div class="sum-l">今日投资盈亏</div><div class="sum-v sm" id="todayPnl">--</div></div>
         <div><div class="sum-l">投资累计盈亏</div><div class="sum-v sm" id="investPnl">--</div></div>
       </div>
+      <div class="hero-split" id="heroMix"></div>
     </div>
     <div class="card" id="goalCard">
       <div class="card-t"><span>收益目标</span><span class="sub" id="goalTier">9 档里程碑</span></div>
@@ -309,8 +316,14 @@
   </div>
 
   <div id="p-invest" style="display:none">
+    <div class="card" id="investCashCard">
+      <div class="card-t"><span>投资账户</span>
+        <span><button class="btn-sm warn" onclick="openTransfer()">互转</button></span>
+      </div>
+      <div id="investCashBox"></div>
+    </div>
     <div class="card" id="allocCard">
-      <div class="card-t"><span>资产配置</span><span class="sub">按市值</span></div>
+      <div class="card-t"><span>资产配置</span><span class="sub">持仓 + 闲钱</span></div>
       <div class="alloc-bar" id="allocBar"></div>
       <div id="allocRows"></div>
     </div>
@@ -384,6 +397,11 @@
     </div>
 
     <div id="p-accounts">
+      <div class="card">
+        <div class="card-t">资产一览</div>
+        <div class="stat-g" id="mineStats"></div>
+        <p class="hint" style="margin:0 0 10px">总资产 = 投资持仓 + 投资闲钱 + 其他账户。账户之间互转不改变总资产，也不计入收支和投资盈亏。</p>
+      </div>
       <div class="card">
         <div class="card-t"><span>我的账户</span>
           <span>
@@ -471,6 +489,7 @@
           • 基金：天天基金估值/净值接口<br>
           • 虚拟货币：Coinbase、Binance 等并行行情<br>
           • 添加持仓时输入代码或名称即可，类型和币种自动识别<br>
+          • 投资账户 = 持仓市值 + 闲钱。买入、加仓、定投从闲钱扣，卖出、减仓、清仓回到闲钱；闲钱可与银行卡等账户互转（只能转出闲钱）。互转记在明细账本，不算收入、支出，也不算投资盈亏<br>
           • 每天北京时间 6:00 后打开 App，自动记录上一交易日收盘盈亏；今日盈亏从买入价起算（今天新买的也按买入价算），休市的日子今日盈亏是 0<br>
           • 数据默认存在本机浏览器；在「我的 → 设置 → 多设备同步」开启后，也会保存到你自己的 GitHub 私密 Gist
         </p>
@@ -502,16 +521,26 @@
     <div class="form-g"><label>名称</label><input class="form-c" id="accName" required placeholder="招商银行 / 支付宝 / 微信"></div>
     <div class="form-r">
       <div class="form-g"><label>类型</label>
-        <select class="form-c" id="accType">
+        <select class="form-c" id="accType" onchange="syncAccForm()">
           <option value="bank">银行卡</option>
           <option value="alipay">支付宝</option>
           <option value="wechat">微信</option>
+          <option value="invest">投资账户</option>
           <option value="cash">现金</option>
           <option value="other">其他</option>
         </select>
       </div>
-      <div class="form-g"><label>余额</label><input class="form-c" id="accBal" type="number" step="any" value="0"></div>
+      <div class="form-g"><label>币种</label>
+        <select class="form-c" id="accCur">
+          <option value="CNY">CNY 人民币</option>
+          <option value="USD">USD 美元</option>
+          <option value="HKD">HKD 港币</option>
+          <option value="USDT">USDT</option>
+        </select>
+      </div>
     </div>
+    <div class="form-g"><label id="accBalLab">余额</label><input class="form-c" id="accBal" type="number" step="any" value="0"></div>
+    <p class="hint" id="accBalHint" style="display:none;margin:-4px 0 12px">这里填还能用来买的闲钱，不含已经买成持仓的钱。买入会从这里扣，卖出加回。</p>
     <button class="btn btn-p" onclick="saveAcc()">保存</button>
   </div>
 </div>
@@ -520,14 +549,14 @@
 <div class="modal-ov" id="xferModal">
   <div class="modal">
     <div class="modal-hd"><div class="modal-tt">账户互转</div><button class="modal-x" onclick="closeM('xferModal')">×</button></div>
+    <div class="form-g"><label>转出账户</label><select class="form-c" id="xferFrom" onchange="onXferAcc()"></select></div>
+    <div class="form-g"><label>转入账户</label><select class="form-c" id="xferTo" onchange="onXferAcc()"></select></div>
     <div class="form-r">
-      <div class="form-g"><label>转出账户</label><select class="form-c" id="xferFrom"></select></div>
-      <div class="form-g"><label>转入账户</label><select class="form-c" id="xferTo"></select></div>
-    </div>
-    <div class="form-r">
-      <div class="form-g"><label>金额（¥）</label><input class="form-c" id="xferAmt" type="number" step="any"></div>
+      <div class="form-g"><label id="xferAmtLab">金额</label><input class="form-c" id="xferAmt" type="number" step="any" oninput="syncXferFx()"></div>
       <div class="form-g"><label>日期</label><input class="form-c" id="xferDate" type="date"></div>
     </div>
+    <div class="form-g" id="xferInRow" style="display:none"><label>到账金额（可改）</label><input class="form-c" id="xferIn" type="number" step="any" oninput="xferInTouched=true"></div>
+    <p class="hint" id="xferHint" style="margin:-2px 0 12px"></p>
     <div class="form-g"><label>备注（可空）</label><input class="form-c" id="xferNote"></div>
     <button class="btn btn-p" onclick="saveTransfer()">确认转账</button>
   </div>
@@ -559,6 +588,7 @@
       </div>
       <p class="hint" style="margin:-4px 0 10px">只在自动识别不准时改。已有持仓打开编辑时，不会自动改掉原来的类型和币种。</p>
     </div>
+    <div class="form-g" id="pAccRow" style="display:none"><label>投资账户（买入从该账户闲钱扣）</label><select class="form-c" id="pAcc"></select></div>
     <div class="form-g"><label>名称</label><input class="form-c" id="pName" required oninput="nameAuto=false"></div>
     <div class="form-r">
       <div class="form-g"><label>数量/份额</label><input class="form-c" id="pQty" type="number" step="any" required></div>
@@ -628,7 +658,7 @@
       </div>
     </div>
     <div class="form-g"><label>下次定投日</label><input class="form-c" id="dcaNext" type="date"></div>
-    <p class="hint">到定投日可点「执行定投」：增加基金份额（按当前净值估算），只记份额，不自动扣款</p>
+    <p class="hint">到定投日点「执行定投」：按当前净值增加份额，并从这只基金所在投资账户的闲钱扣除。没有投资账户时只记份额。</p>
     <button class="btn btn-p" onclick="saveDca()">保存计划</button>
   </div>
 </div>
@@ -698,6 +728,7 @@ function load(){ try{ const r=localStorage.getItem(SK); if(r) S={...S,...JSON.pa
     }
   }catch(e){}
   migrateTrades();
+  if(migrateInvestCash()) try{ localStorage.setItem(SK, JSON.stringify(S)); }catch(e){}
   // 币种自动识别：老数据里手动选错的币种，读进来时按代码市场自动纠正
   // （美股→美元、港股→港币、A股/基金→人民币、加密→美元；“其他”类型不动）
   let curFixed=false;
@@ -735,7 +766,12 @@ function fmt(n,d=2){ if(n==null||isNaN(n)) return '--'; return Number(n).toLocal
 function fmtP(n){ return n==null||isNaN(n)?'--':((n>=0?'+':'')+fmt(n)); }
 function cssVar(n){ return getComputedStyle(document.documentElement).getPropertyValue(n).trim()||'#888'; }
 function toast(m,ms=2800){ const e=document.getElementById('toast'); e.textContent=m; e.classList.add('show'); setTimeout(()=>e.classList.remove('show'),ms); }
-function toCNY(a,c){ if(a==null||isNaN(a)) return 0; if(c==='CNY') return a; return a*(S.rates[c]||1); }
+function toCNY(a,c){ if(a==null||isNaN(a)) return 0; if(!c||c==='CNY') return a; return a*(S.rates[c]||1); }
+function fromCNY(a,c){ if(a==null||isNaN(a)) return 0; if(!c||c==='CNY') return a; const r=S.rates[c]||1; return r?a/r:a; }
+function convertAmt(amount, from, to){ const f=from||'CNY', t=to||'CNY'; if(f===t) return +amount||0; return fromCNY(toCNY(+amount||0, f), t); }
+function roundMoney(n){ return Math.round((+n||0)*100)/100; }
+function cents(n){ return Math.round((+n||0)*100); }
+function money(n, cur){ const c=cur||'CNY'; const sym={CNY:'¥',USD:'$',HKD:'HK$',USDT:'USDT '}; return (sym[c]||(c+' '))+fmt(n); }
 function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function closeM(id){ document.getElementById(id).classList.remove('show'); }
 function openM(id){ document.getElementById(id).classList.add('show'); }
@@ -1207,14 +1243,16 @@ function renderWeek(){
 function renderAlloc(){
   const bar=document.getElementById('allocBar'), rows=document.getElementById('allocRows');
   if(!bar||!rows) return;
-  const spec=[['stock','股票','var(--c-stock)'],['fund','基金','var(--c-fund)'],['crypto','虚拟货币','var(--c-crypto)'],['other','其他','var(--c-other)']];
-  const sums={stock:0,fund:0,crypto:0,other:0};
+  const spec=[['stock','股票','var(--c-stock)'],['fund','基金','var(--c-fund)'],['crypto','虚拟货币','var(--c-crypto)'],['cash','现金','var(--c-cash)'],['other','其他','var(--c-other)']];
+  const sums={stock:0,fund:0,crypto:0,cash:0,other:0};
   (S.positions||[]).forEach(p=>{
     if((+p.qty||0)<=1e-10) return;
     const c=calcPos(p);
     const v=c.valueCNY!=null?c.valueCNY:(+c.costCNY||0);
-    sums[sums[p.type]!=null?p.type:'other']+=v;
+    const k=sums[p.type]!=null?p.type:'other';
+    sums[k]+=v;
   });
+  sums.cash=investAccounts().reduce((s,a)=>s+idleCNY(a),0);
   const total=spec.reduce((s,x)=>s+sums[x[0]],0);
   bar.innerHTML=total>0?spec.map(x=>{ const w=sums[x[0]]/total*100; return w>0?`<i style="width:${w}%;background:${x[2]}"></i>`:''; }).join(''):'';
   rows.innerHTML=spec.map(x=>{
@@ -1262,9 +1300,18 @@ function buildBookEvents(){
       sub:(n?n+' 只持仓 · ':'')+(h.auto?'自动结算':'手动记录'),amount:+h.totalPnl||0,tone:'pnl'});
   });
   (S.transfers||[]).forEach(t=>{
-    if(!t||!t.fromId||!t.toId||!t.date) return;
-    ev.push({date:t.date,sort:t.ts||0,filter:'xfer',tag:'转账',tagCls:'xfer',dot:'xfer',
-      title:accNameById(t.fromId)+' → '+accNameById(t.toId),sub:t.note||'账户互转',amount:+t.amount||0,tone:'mute'});
+    if(!t||!t.date) return;
+    let title='', sub=t.note||'账户互转', amount=0;
+    if(t.fromId&&t.toId){
+      title=accNameById(t.fromId)+' → '+accNameById(t.toId);
+      amount=toCNY(+t.amount||0, t.fromCur||'CNY');
+      if(t.fromCur&&t.toCur&&t.fromCur!==t.toCur) sub=(t.note?t.note+' · ':'')+'到账 '+money(t.amountIn!=null?t.amountIn:convertAmt(t.amount,t.fromCur,t.toCur), t.toCur);
+    }else if(t.dir&&t.otherId){
+      const other=accNameById(t.otherId);
+      title=t.dir==='in'?(other+' → 投资账户'):('投资账户 → '+other);
+      amount=+t.amount||0;
+    }else return;
+    ev.push({date:t.date,sort:t.ts||0,filter:'xfer',tag:'转账',tagCls:'xfer',dot:'xfer',title,sub,amount,tone:'mute'});
   });
   return ev;
 }
@@ -1650,8 +1697,133 @@ function debtValue(){
   return S.debts.reduce((s,d)=>s+(+d.amount||0),0);
 }
 
-/** 旧版自动生成的「投资账户」：资金功能已取消，数据原样留在存储里，但界面和汇总不再出现它、不再读写它的余额 */
-function isLegacyInvestAcc(a){ return !!a && (a.type==='invest'||a.name==='投资账户'); }
+/** 投资账户：类型为 invest，或旧数据里名字就叫「投资账户」。闲钱存在 balance，cashInited 表示用户确认过这笔闲钱。 */
+function isInvestAcc(a){ return !!a && (a.type==='invest'||a.name==='投资账户'); }
+function accCurrency(a){ return (a&&a.currency)||'CNY'; }
+function investAccounts(){ return (S.accounts||[]).filter(isInvestAcc); }
+function primaryInvestAcc(){ const list=investAccounts(); return list.find(a=>a.name==='投资账户')||list[0]||null; }
+/** 持仓归到哪个投资账户：有 accId 用它，否则归到主投资账户。没有投资账户时返回 null，持仓市值仍单独计入总资产。 */
+function resolvedInvestAcc(p){
+  if(p&&p.accId){ const a=(S.accounts||[]).find(x=>x.id===p.accId&&isInvestAcc(x)); if(a) return a; }
+  return primaryInvestAcc();
+}
+function positionsOf(acc){
+  if(!acc) return [];
+  return (S.positions||[]).filter(p=>resolvedInvestAcc(p)===acc);
+}
+/** 闲钱。旧投资账户没有闲钱字段、或余额其实是市值镜像时，不当成闲钱（默认 0），避免总资产把市值算两遍。 */
+function idleCash(a){
+  if(!a) return 0;
+  if(!isInvestAcc(a)) return +a.balance||0;
+  if(a.cashInited) return +a.balance||0;
+  if(a.cash!=null&&a.cash!==''&&isFinite(+a.cash)) return +a.cash;
+  if(a.idleCash!=null&&a.idleCash!==''&&isFinite(+a.idleCash)) return +a.idleCash;
+  if(a.available!=null&&a.available!==''&&isFinite(+a.available)) return +a.available;
+  return 0;
+}
+function idleCNY(a){ return toCNY(idleCash(a), accCurrency(a)); }
+function availOf(a){ return isInvestAcc(a)?idleCash(a):(+a.balance||0); }
+function accountMvCNY(acc){
+  return positionsOf(acc).reduce((s,p)=>{
+    if((+p.qty||0)<=1e-10) return s;
+    const c=calcPos(p);
+    return s+(c.valueCNY!=null?c.valueCNY:(c.costCNY||0));
+  },0);
+}
+function assetTotals(){
+  const inv=investValue();
+  const idle=investAccounts().reduce((s,a)=>s+idleCNY(a),0);
+  const other=(S.accounts||[]).filter(a=>!isInvestAcc(a)).reduce((s,a)=>s+toCNY(+a.balance||0, accCurrency(a)),0);
+  return {assets:other+idle+inv.value, idle, mv:inv.value, other, inv};
+}
+/** 买入为负、卖出为正，单位是持仓币种（含手续费） */
+function tradeCashNative(t){
+  const q=+t.qty||0, pr=+t.price||0, f=+t.fee||0;
+  return t.side==='sell' ? (q*pr-f) : -(q*pr+f);
+}
+function applyIdle(acc, delta){
+  if(!acc) return 0;
+  acc.balance=roundMoney(idleCash(acc)+delta);
+  acc.cashInited=true;
+  return acc.balance;
+}
+function applyBal(acc, delta){
+  if(!acc) return 0;
+  if(isInvestAcc(acc)) return applyIdle(acc, delta);
+  acc.balance=roundMoney((+acc.balance||0)+delta);
+  return acc.balance;
+}
+/** 把一笔成交记到投资账户闲钱。没有投资账户时不动钱（持仓照常记）。已记过的不重复扣。 */
+function settleTradeCash(p, t){
+  if(!p||!t||t.settled) return null;
+  const acc=resolvedInvestAcc(p);
+  if(!acc) return null;
+  if(!p.accId) p.accId=acc.id;
+  const delta=roundMoney(convertAmt(tradeCashNative(t), p.currency||'CNY', accCurrency(acc)));
+  t.cashDelta=delta; t.cashAccId=acc.id; t.settled=true;
+  return applyIdle(acc, delta);
+}
+function reverseTradeCash(p, t){
+  if(!p||!t||!t.settled) return null;
+  const id=t.cashAccId||p.accId;
+  const acc=(S.accounts||[]).find(a=>a.id===id&&isInvestAcc(a))||resolvedInvestAcc(p);
+  const delta=t.cashDelta!=null?+t.cashDelta:roundMoney(convertAmt(tradeCashNative(t), p.currency||'CNY', acc?accCurrency(acc):'CNY'));
+  t.settled=false;
+  if(!acc) return null;
+  return applyIdle(acc, -delta);
+}
+function migrateInvestCash(){
+  let ch=false;
+  if(!Array.isArray(S.transfers)){ S.transfers=[]; ch=true; }
+  (S.accounts||[]).forEach(a=>{
+    if(!a||typeof a!=='object') return;
+    if(!a.currency){ a.currency='CNY'; ch=true; }
+    if(!isInvestAcc(a)) return;
+    if(a.cashInited===true) return;
+    let explicit=null;
+    if(a.cash!=null&&a.cash!==''&&isFinite(+a.cash)) explicit=+a.cash;
+    else if(a.idleCash!=null&&a.idleCash!==''&&isFinite(+a.idleCash)) explicit=+a.idleCash;
+    else if(a.available!=null&&a.available!==''&&isFinite(+a.available)) explicit=+a.available;
+    if(explicit!=null){ a.balance=roundMoney(explicit); a.cashInited=true; ch=true; return; }
+    if((+a.balance||0)!==0||a.cashInited!==false){ a.balance=0; a.cashInited=false; ch=true; }
+  });
+  return ch;
+}
+function renderInvestCash(){
+  const box=document.getElementById('investCashBox'); if(!box) return;
+  const accs=investAccounts();
+  const inv=investValue();
+  if(!accs.length){
+    box.innerHTML=`<div class="stat-3">
+      <div class="stat-b"><div class="l">总额</div><div class="v">¥${fmt(inv.value)}</div></div>
+      <div class="stat-b"><div class="l">持仓市值</div><div class="v">¥${fmt(inv.value)}</div></div>
+      <div class="stat-b"><div class="l">闲钱</div><div class="v">¥${fmt(0)}</div></div>
+    </div><p class="hint">还没有投资账户。在「我的 → 账户」加上之后，买入从闲钱扣、卖出回到闲钱，也可以和银行卡互转。</p>`;
+    return;
+  }
+  box.innerHTML=accs.map(a=>{
+    const mv=accountMvCNY(a), idle=idleCNY(a), cur=accCurrency(a);
+    const idleTxt=cur==='CNY'?('¥'+fmt(idleCash(a))):money(idleCash(a),cur);
+    return `<div class="item">
+      <div class="item-name">${esc(a.name)}</div>
+      <div class="stat-3" style="margin-top:8px">
+        <div class="stat-b"><div class="l">总额</div><div class="v">¥${fmt(mv+idle)}</div></div>
+        <div class="stat-b"><div class="l">持仓市值</div><div class="v">¥${fmt(mv)}</div></div>
+        <div class="stat-b"><div class="l">闲钱</div><div class="v">${idleTxt}</div></div>
+      </div>
+      <p class="hint" style="margin-top:4px">总额 = 持仓市值 + 闲钱${cur==='CNY'?'':' · 闲钱折合 ¥'+fmt(idle)}</p>
+    </div>`;
+  }).join('');
+}
+function renderAssetMix(id){
+  const el=document.getElementById(id); if(!el) return;
+  const t=assetTotals();
+  el.innerHTML=`
+    <div class="stat-b"><div class="l">总资产</div><div class="v">¥${fmt(t.assets)}</div></div>
+    <div class="stat-b"><div class="l">其他账户</div><div class="v">¥${fmt(t.other)}</div></div>
+    <div class="stat-b"><div class="l">投资持仓</div><div class="v">¥${fmt(t.mv)}</div></div>
+    <div class="stat-b"><div class="l">投资闲钱</div><div class="v">¥${fmt(t.idle)}</div></div>`;
+}
 
 // ===== 每日收盘自动记录（替代手动「标记收盘」）=====
 // 记录按「交易日」存：例如 30 号 6:00 后打开，会写入 29 号的记录 = 29 号 A股/港股收盘 + 29 号基金净值 + 29 号美股（北京 30 号凌晨收盘）。
@@ -1756,8 +1928,8 @@ setInterval(()=>autoDailyClose(),10*60e3);
 // ===== Render =====
 function renderAll(){
   const inv=investValue(), debt=debtValue();
-  const otherCash=S.accounts.filter(a=>!isLegacyInvestAcc(a)).reduce((s,a)=>s+(+a.balance||0),0);
-  const assets=otherCash+inv.value;
+  const mix=assetTotals();
+  const assets=mix.assets;
   const net=assets-debt;
   document.getElementById('netWorth').textContent='¥'+fmt(net);
   document.getElementById('totalAssets').textContent='¥'+fmt(assets);
@@ -1771,10 +1943,18 @@ function renderAll(){
   renderRates();
 
   document.getElementById('homeStats').innerHTML=`
-    <div class="stat-b"><div class="l">现金/银行卡等</div><div class="v">¥${fmt(otherCash)}</div></div>
-    <div class="stat-b"><div class="l">投资市值</div><div class="v">¥${fmt(inv.value)}</div></div>
+    <div class="stat-b"><div class="l">总资产</div><div class="v">¥${fmt(mix.assets)}</div></div>
+    <div class="stat-b"><div class="l">其他账户</div><div class="v">¥${fmt(mix.other)}</div></div>
+    <div class="stat-b"><div class="l">投资持仓</div><div class="v">¥${fmt(mix.mv)}</div></div>
+    <div class="stat-b"><div class="l">投资闲钱</div><div class="v">¥${fmt(mix.idle)}</div></div>
     <div class="stat-b"><div class="l">待还</div><div class="v" style="color:var(--danger)">¥${fmt(debt)}</div></div>
     <div class="stat-b"><div class="l">持仓数</div><div class="v">${S.positions.filter(p=>(+p.qty||0)>1e-10).length}</div></div>`;
+  renderAssetMix('mineStats');
+  const heroMix=document.getElementById('heroMix');
+  if(heroMix) heroMix.innerHTML=`
+    <div><div class="sum-l">投资持仓</div><div class="sum-v sm">¥${fmt(mix.mv)}</div></div>
+    <div><div class="sum-l">投资闲钱</div><div class="sum-v sm">¥${fmt(mix.idle)}</div></div>
+    <div><div class="sum-l">其他账户</div><div class="sum-v sm">¥${fmt(mix.other)}</div></div>`;
   // 本月收支
   const ym=today().slice(0,7);
   let minc=0, mexp=0;
@@ -1825,16 +2005,36 @@ function renderAll(){
 
 function renderAccounts(){
   const el=document.getElementById('accList');
-  const list=S.accounts.filter(a=>!isLegacyInvestAcc(a));
-  if(!list.length){ el.innerHTML='<div class="empty">点击 ＋ 添加银行卡/支付宝等</div>'; }
+  const list=S.accounts||[];
+  const typeName={bank:'银行卡',alipay:'支付宝',wechat:'微信',invest:'投资',cash:'现金',other:'其他'};
+  if(!list.length){ el.innerHTML='<div class="empty">点击 ＋ 添加银行卡、支付宝或投资账户</div>'; }
   else el.innerHTML=list.map(a=>{
+    if(isInvestAcc(a)){
+      const mv=accountMvCNY(a), idle=idleCNY(a), cur=accCurrency(a);
+      const idleTxt=cur==='CNY'?('¥'+fmt(idleCash(a))):money(idleCash(a),cur);
+      return `<div class="item">
+        <div class="item-top">
+          <div><div class="item-name">${esc(a.name)}</div>
+            <div class="item-meta"><span class="badge invest">投资</span> · 持仓市值 ¥${fmt(mv)} · 闲钱 ${idleTxt}</div>
+          </div>
+          <div class="item-r"><div class="item-v">¥${fmt(mv+idle)}</div></div>
+        </div>
+        <div class="btn-row">
+          <button class="btn-sm warn" onclick="openTransfer('${a.id}')">互转</button>
+          <button class="btn-sm pri" onclick="editAcc('${a.id}')">编辑</button>
+          <button class="btn-sm dan" onclick="delAcc('${a.id}')">删除</button>
+        </div>
+      </div>`;
+    }
     const bal=+a.balance||0; // 余额为 0 时不显示余额数字（行保留，以后还能往里转钱）
+    const cur=accCurrency(a);
+    const shown=cur==='CNY'?('¥'+fmt(bal)):money(bal,cur);
     return `<div class="item">
       <div class="item-top">
         <div><div class="item-name">${esc(a.name)}</div>
-          <div class="item-meta"><span class="badge ${a.type}">${{bank:'银行卡',alipay:'支付宝',wechat:'微信',cash:'现金',other:'其他'}[a.type]||a.type}</span>${bal===0?'':' · 余额'}</div>
+          <div class="item-meta"><span class="badge ${a.type}">${typeName[a.type]||a.type}</span>${bal===0?'':' · 余额'}</div>
         </div>
-        ${bal===0?'':'<div class="item-r"><div class="item-v">¥'+fmt(bal)+'</div></div>'}
+        ${bal===0?'':'<div class="item-r"><div class="item-v">'+shown+'</div></div>'}
       </div>
       <div class="btn-row">
         <button class="btn-sm pri" onclick="editAcc('${a.id}')">编辑</button>
@@ -1859,6 +2059,7 @@ function histStats(p){
   return {buyQ,buyAmt,sellQ,sellAmt,avgBuy,avgSell,firstBuy,lastSell,real,pct,realCNY:toCNY(real,p.currency)};
 }
 function renderInvest(){
+  renderInvestCash();
   const q=(document.getElementById('posQ')?.value||'').toLowerCase();
   const ft=document.getElementById('posType')?.value||'';
   S.positions.forEach(p=>{ if(!Array.isArray(p.trades)||!p.trades.length) recalcPos(p); });
@@ -2037,43 +2238,85 @@ function showDay(ds){
 
 function fillSelects(){
   const la=document.getElementById('ledAcc');
-  if(la) la.innerHTML=S.accounts.filter(a=>!isLegacyInvestAcc(a)).map(a=>`<option value="${a.id}">${esc(a.name)}</option>`).join('')||'<option value="">请先添加账户</option>';
+  if(la) la.innerHTML=S.accounts.filter(a=>!isInvestAcc(a)).map(a=>`<option value="${a.id}">${esc(a.name)}</option>`).join('')||'<option value="">请先添加账户</option>';
   const dp=document.getElementById('dcaPos');
   if(dp) dp.innerHTML=S.positions.filter(p=>p.type==='fund').map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('')||'<option value="">请先添加基金持仓</option>';
 }
 
 // ===== CRUD =====
+function syncAccForm(){
+  const inv=document.getElementById('accType').value==='invest';
+  const lab=document.getElementById('accBalLab'); if(lab) lab.textContent=inv?'闲钱':'余额';
+  const hint=document.getElementById('accBalHint'); if(hint) hint.style.display=inv?'block':'none';
+}
 function openAccModal(){ document.getElementById('accId').value=''; document.getElementById('accTitle').textContent='添加账户';
-  document.getElementById('accName').value=''; document.getElementById('accBal').value='0'; document.getElementById('accType').value='bank'; openM('accModal'); }
+  document.getElementById('accName').value=''; document.getElementById('accBal').value='0'; document.getElementById('accType').value='bank';
+  const cur=document.getElementById('accCur'); if(cur) cur.value='CNY';
+  syncAccForm(); openM('accModal'); }
 function editAcc(id){ const a=S.accounts.find(x=>x.id===id); if(!a)return;
   document.getElementById('accId').value=id; document.getElementById('accTitle').textContent='编辑账户';
-  document.getElementById('accName').value=a.name; document.getElementById('accType').value=a.type; document.getElementById('accBal').value=a.balance; openM('accModal'); }
+  document.getElementById('accName').value=a.name; document.getElementById('accType').value=isInvestAcc(a)?'invest':(a.type||'other');
+  document.getElementById('accBal').value=isInvestAcc(a)?idleCash(a):(a.balance??0);
+  const cur=document.getElementById('accCur'); if(cur) cur.value=accCurrency(a);
+  syncAccForm(); openM('accModal'); }
 function saveAcc(){
   const id=document.getElementById('accId').value;
-  const data={name:document.getElementById('accName').value.trim(),type:document.getElementById('accType').value,balance:+document.getElementById('accBal').value||0};
+  const data={name:document.getElementById('accName').value.trim(),type:document.getElementById('accType').value,
+    balance:roundMoney(+document.getElementById('accBal').value||0), currency:(document.getElementById('accCur')||{}).value||'CNY'};
   if(!data.name) return toast('请填名称');
+  if(data.name==='投资账户') data.type='invest';
+  if(data.type==='invest'||data.name==='投资账户') data.cashInited=true;
   if(id){ const i=S.accounts.findIndex(a=>a.id===id); if(i>=0) S.accounts[i]={...S.accounts[i],...data}; }
   else S.accounts.push({id:uid(),...data,createdAt:Date.now()});
   save(); closeM('accModal'); renderAll(); toast('已保存');
 }
 function delAcc(id){ if(!confirm('删除账户？'))return; S.accounts=S.accounts.filter(a=>a.id!==id); save(); renderAll(); }
 
-/** 账户互转（通用版）：任意两个非投资账户之间转钱；投资账户不参与（资金功能已取消，见 isLegacyInvestAcc） */
-function xferAccounts(){ return S.accounts.filter(a=>!isLegacyInvestAcc(a)); }
+/** 任意账户互转。投资账户只能转出闲钱，持仓留在账户里。 */
+function xferAccounts(){ return S.accounts||[]; }
+function accOptionLabel(a){
+  return esc(a.name)+'（'+(isInvestAcc(a)?'闲钱 ':'')+money(availOf(a), accCurrency(a))+'）';
+}
 function fillXferSelects(){
-  const opts=xferAccounts().map(a=>`<option value="${a.id}">${esc(a.name)}（¥${fmt(+a.balance||0)}）</option>`).join('')||'<option value="">请先添加账户</option>';
+  const opts=xferAccounts().map(a=>`<option value="${a.id}">${accOptionLabel(a)}</option>`).join('')||'<option value="">请先添加账户</option>';
   const f=document.getElementById('xferFrom'), t=document.getElementById('xferTo');
+  const fv=f?f.value:'', tv=t?t.value:'';
   if(f) f.innerHTML=opts;
   if(t) t.innerHTML=opts;
+  if(f&&fv) f.value=fv;
+  if(t&&tv) t.value=tv;
 }
-function openTransfer(){
+let xferInTouched=false;
+function onXferAcc(){ xferInTouched=false; syncXferFx(); }
+function syncXferFx(){
+  const from=S.accounts.find(a=>a.id===(document.getElementById('xferFrom')||{}).value);
+  const to=S.accounts.find(a=>a.id===(document.getElementById('xferTo')||{}).value);
+  const row=document.getElementById('xferInRow'), hint=document.getElementById('xferHint'), lab=document.getElementById('xferAmtLab');
+  const fc=from?accCurrency(from):'CNY', tc=to?accCurrency(to):'CNY';
+  if(lab) lab.textContent='金额（'+fc+'）';
+  const diff=!!(from&&to&&fc!==tc);
+  if(row) row.style.display=diff?'':'none';
+  const amt=+((document.getElementById('xferAmt')||{}).value);
+  const inn=document.getElementById('xferIn');
+  if(diff&&inn&&!xferInTouched) inn.value=amt>0?String(roundMoney(convertAmt(amt,fc,tc))):'';
+  if(!hint) return;
+  if(!from){ hint.textContent=''; return; }
+  hint.textContent=(isInvestAcc(from)?'投资账户只能转出闲钱，不能转出持仓。可转 ':'可转 ')+money(availOf(from),fc)+(diff?'。币种不同，到账按当前汇率折算，也可以改到账金额。':'');
+}
+function openTransfer(prefFrom){
+  if(typeof prefFrom!=='string') prefFrom='';
   fillXferSelects();
+  xferInTouched=false;
   const list=xferAccounts();
-  document.getElementById('xferFrom').value=list[0]?list[0].id:'';
-  document.getElementById('xferTo').value=list[1]?list[1].id:(list[0]?list[0].id:'');
+  const from=document.getElementById('xferFrom'), to=document.getElementById('xferTo');
+  from.value=(prefFrom&&list.some(a=>a.id===prefFrom))?prefFrom:(list[0]?list[0].id:'');
+  const other=list.find(a=>a.id!==from.value);
+  to.value=other?other.id:(list[0]?list[0].id:'');
   document.getElementById('xferAmt').value='';
+  const inn=document.getElementById('xferIn'); if(inn) inn.value='';
   document.getElementById('xferNote').value='';
   document.getElementById('xferDate').value=today();
+  syncXferFx();
   openM('xferModal');
 }
 function saveTransfer(){
@@ -2085,35 +2328,64 @@ function saveTransfer(){
   if(fromId===toId) return toast('转出和转入不能是同一个账户');
   if(!(amt>0)) return toast('请填金额');
   const from=S.accounts.find(a=>a.id===fromId), to=S.accounts.find(a=>a.id===toId);
-  if(!from||!to||isLegacyInvestAcc(from)||isLegacyInvestAcc(to)) return toast('账户不存在');
-  if((+from.balance||0)<amt) return toast('转出账户余额不足');
-  from.balance=(+from.balance||0)-amt;
-  to.balance=(+to.balance||0)+amt;
+  if(!from||!to) return toast('账户不存在');
+  const fc=accCurrency(from), tc=accCurrency(to);
+  let recv=amt;
+  if(fc!==tc){
+    const raw=(document.getElementById('xferIn')||{}).value;
+    recv=(raw===''||raw==null)?convertAmt(amt,fc,tc):+raw;
+    if(!(recv>0)) return toast('请填到账金额');
+  }
+  recv=roundMoney(recv);
+  if(cents(availOf(from))<cents(amt)) return toast(isInvestAcc(from)?'闲钱不足，投资账户不能转出持仓':'转出账户余额不足');
+  applyBal(from, -amt);
+  applyBal(to, recv);
   S.transfers=S.transfers||[];
-  S.transfers.push({id:uid(),fromId,toId,amount:amt,date,note,ts:Date.now()});
+  S.transfers.push({id:uid(),fromId,toId,amount:roundMoney(amt),amountIn:recv,fromCur:fc,toCur:tc,date,note,ts:Date.now()});
   save(); closeM('xferModal'); renderAll(); toast('已转账');
+}
+function xferLine(t){
+  if(t.fromId&&t.toId){
+    const from=S.accounts.find(a=>a.id===t.fromId), to=S.accounts.find(a=>a.id===t.toId);
+    const fc=t.fromCur||'CNY', tc=t.toCur||fc;
+    let amt=money(t.amount, fc);
+    if(fc!==tc) amt+=' → '+money(t.amountIn!=null?t.amountIn:t.amount, tc);
+    return esc(from?from.name:'已删除账户')+' → '+esc(to?to.name:'已删除账户')+' '+amt;
+  }
+  const other=S.accounts.find(a=>a.id===t.otherId);
+  return (t.dir==='in'?'转入':'转出')+' '+money(t.amount,'CNY')+' · '+(t.dir==='in'?'从 ':'到 ')+esc(other?other.name:'已删除账户');
 }
 function renderXferList(){
   const xl=document.getElementById('xferList'); if(!xl) return;
-  // 只渲染新格式记录（{fromId,toId}）；旧格式（{dir,otherId}，属于已删的投资账户流程）直接跳过，不让列表崩掉
-  const list=(S.transfers||[]).filter(t=>t&&t.fromId&&t.toId).slice()
+  const list=(S.transfers||[]).filter(t=>t&&((t.fromId&&t.toId)||(t.dir&&t.otherId))).slice()
     .sort((a,b)=>String(b.date).localeCompare(String(a.date))||(b.ts||0)-(a.ts||0)).slice(0,50);
   if(!list.length){ xl.innerHTML='<div class="empty">暂无划转记录</div>'; return; }
-  xl.innerHTML=list.map(t=>{
-    const from=S.accounts.find(a=>a.id===t.fromId), to=S.accounts.find(a=>a.id===t.toId);
-    return `<div class="item"><div class="item-top"><div><div class="item-name">${esc(from?from.name:'已删除账户')} → ${esc(to?to.name:'已删除账户')} ¥${fmt(t.amount)}</div>
-      <div class="item-meta">${esc(t.date)}${t.note?' · '+esc(t.note):''}</div></div></div>
-      <div class="btn-row"><button class="btn-sm dan" onclick="delTransfer('${t.id}')">删除</button></div></div>`;
-  }).join('');
+  xl.innerHTML=list.map(t=>`<div class="item"><div class="item-top"><div><div class="item-name">${xferLine(t)}</div>
+      <div class="item-meta">${esc(t.date||'')}${t.note?' · '+esc(t.note):''}</div></div></div>
+      <div class="btn-row"><button class="btn-sm dan" onclick="delTransfer('${t.id}')">删除</button></div></div>`).join('');
 }
 function delTransfer(id){
   const t=(S.transfers||[]).find(x=>x.id===id); if(!t) return;
   if(!confirm('删除这条划转记录？余额会按原路冲回。')) return;
-  const from=S.accounts.find(a=>a.id===t.fromId), to=S.accounts.find(a=>a.id===t.toId);
-  if(!from||!to){ S.transfers=S.transfers.filter(x=>x.id!==id); save(); renderAll(); toast('已删除（相关账户已不存在，未做冲正）'); return; }
-  if((+to.balance||0)<(+t.amount||0)) return toast('转入账户余额不足，无法冲回');
-  from.balance=(+from.balance||0)+(+t.amount||0);
-  to.balance=(+to.balance||0)-(+t.amount||0);
+  if(t.fromId&&t.toId){
+    const from=S.accounts.find(a=>a.id===t.fromId), to=S.accounts.find(a=>a.id===t.toId);
+    if(!from||!to){ S.transfers=S.transfers.filter(x=>x.id!==id); save(); renderAll(); toast('已删除（相关账户已不存在，未做冲正）'); return; }
+    const backIn=t.amountIn!=null?+t.amountIn:+t.amount||0;
+    if(cents(availOf(to))<cents(backIn)) return toast('转入账户余额不足，无法冲回');
+    applyBal(from, +t.amount||0);
+    applyBal(to, -backIn);
+  }else if(t.dir&&t.otherId){
+    const other=S.accounts.find(a=>a.id===t.otherId), inv=primaryInvestAcc();
+    if(!other||!inv){ S.transfers=S.transfers.filter(x=>x.id!==id); save(); renderAll(); toast('已删除（相关账户已不存在，未做冲正）'); return; }
+    const amt=+t.amount||0;
+    if(t.dir==='in'){
+      if(cents(availOf(inv))<cents(amt)) return toast('投资账户闲钱不足，无法冲回');
+      applyBal(inv, -amt); applyBal(other, amt);
+    }else{
+      if(cents(availOf(other))<cents(amt)) return toast('对方账户余额不足，无法冲回');
+      applyBal(inv, amt); applyBal(other, -amt);
+    }
+  }else{ S.transfers=S.transfers.filter(x=>x.id!==id); save(); renderAll(); return; }
   S.transfers=S.transfers.filter(x=>x.id!==id);
   save(); renderAll(); toast('已删除并冲回');
 }
@@ -2157,12 +2429,23 @@ function ensureCurOption(cur){
   }
   sel.value=v;
 }
+function fillPosAcc(selId, lock){
+  const row=document.getElementById('pAccRow'), sel=document.getElementById('pAcc');
+  if(!row||!sel) return;
+  const accs=investAccounts();
+  if(!accs.length){ row.style.display='none'; sel.innerHTML=''; return; }
+  row.style.display='';
+  sel.innerHTML=accs.map(a=>`<option value="${a.id}">${esc(a.name)} · 闲钱 ${money(idleCash(a), accCurrency(a))}</option>`).join('');
+  const prim=primaryInvestAcc()||accs[0];
+  sel.value=(selId&&accs.some(a=>a.id===selId))?selId:prim.id;
+  sel.disabled=!!lock;
+}
 function openPosModal(){ document.getElementById('posId').value=''; document.getElementById('posTitle').textContent='添加持仓';
   ['pName','pSymbol','pQty','pCost','pPrice','pPlat'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('pType').value='stock'; ensureCurOption('CNY'); document.getElementById('pReal').value='0';
   posCutoff=isAfterCutoffNow();
   ['pQty','pCost'].forEach(i=>{ const e=document.getElementById(i); e.disabled=false; e.title=''; });
-  resetDetect(); openM('posModal'); syncCutoffUI(); }
+  resetDetect(); fillPosAcc('', false); openM('posModal'); syncCutoffUI(); }
 function editPos(id){ const p=S.positions.find(x=>x.id===id); if(!p)return;
   document.getElementById('posId').value=id; document.getElementById('posTitle').textContent='编辑持仓';
   document.getElementById('pName').value=p.name||''; document.getElementById('pType').value=p.type||'stock';
@@ -2177,7 +2460,7 @@ function editPos(id){ const p=S.positions.find(x=>x.id===id); if(!p)return;
   paintChip({type:p.type||'stock',currency:cur,name:p.name,confidence:'saved'});
   ensureTrades(p); const lock=p.trades.length>1;
   ['pQty','pCost'].forEach(i=>{ const e=document.getElementById(i); e.disabled=lock; e.title=lock?'已有加仓/减仓记录，请在交易记录里修改':''; });
-  openM('posModal'); syncCutoffUI(); }
+  fillPosAcc(p.accId||'', lock); openM('posModal'); syncCutoffUI(); }
 let posSaving=false;
 async function savePos(){
   if(posSaving) return;
@@ -2205,24 +2488,45 @@ async function savePos(){
     currency, currencyLock:!!curManual, platform:document.getElementById('pPlat').value.trim(),
     realizedPnl:+document.getElementById('pReal').value||0
   };
+  const accSel=document.getElementById('pAcc'), accRow=document.getElementById('pAccRow');
+  if(accSel&&accRow&&accRow.style.display!=='none'&&accSel.value) data.accId=accSel.value;
   if(!data.name||!data.symbol) return toast('请填名称和代码');
+  let warn='';
   if(id){ const i=S.positions.findIndex(p=>p.id===id); if(i>=0){
       const o=S.positions[i]; ensureTrades(o);
+      const multi=o.trades.length>1;
       const sellReal=o.trades.filter(t=>t.side==='sell').reduce((s,t)=>s+(+t.pnl||0),0);
-      if(o.trades.length>1){ delete data.qty; delete data.cost; }
-      else { o.trades[0].qty=data.qty; o.trades[0].price=data.cost; }
+      if(multi){ delete data.qty; delete data.cost; delete data.accId; }
+      else {
+        const base=o.trades[0];
+        const reopen=!!(base&&base.settled&&(
+          Math.abs((+o.qty||0)-(+data.qty||0))>1e-8 || Math.abs((+o.cost||0)-(+data.cost||0))>1e-8 ||
+          (o.currency||'CNY')!==(data.currency||'CNY') || (!!data.accId&&data.accId!==o.accId)));
+        if(reopen) reverseTradeCash(o, base);
+        o.trades[0].qty=data.qty; o.trades[0].price=data.cost;
+        if(data.accId) o.accId=data.accId;
+        if(reopen) base.settled=false;
+      }
       o.realizedBase=data.realizedPnl-sellReal;
-      S.positions[i]={...o,...data}; recalcPos(S.positions[i]); } }
+      S.positions[i]={...o,...data}; recalcPos(S.positions[i]);
+      const p2=S.positions[i];
+      if(!multi&&p2.trades[0]&&p2.trades[0].settled===false&&p2.trades[0].cashDelta!=null){
+        const left=settleTradeCash(p2, p2.trades[0]);
+        if(left!=null&&left<-0.005) warn='，闲钱已为负 '+money(left, accCurrency(resolvedInvestAcc(p2)));
+      } } }
   else {
     const np={id:uid(),...data,createdAt:Date.now()};
+    if(!np.accId&&primaryInvestAcc()) np.accId=primaryInvestAcc().id;
     // 底仓日期用今天，避免「今日盈亏」误用昨收
     np._tradeDate=today();
     ensureTrades(np);
     np.trades[0].date=today();
     if(np.type==='fund') np.trades[0].afterCutoff=posCutoff; // 基金按 15:00 规则记生效日
+    const left=settleTradeCash(np, np.trades[0]);
+    if(left!=null&&left<-0.005) warn='，闲钱已为负 '+money(left, accCurrency(resolvedInvestAcc(np)));
     S.positions.push(np);
   }
-  save(); closeM('posModal'); renderAll(); toast('已保存 · '+data.symbolNorm+' · '+typeLabel(data.type)+' '+data.currency);
+  save(); closeM('posModal'); renderAll(); toast('已保存 · '+data.symbolNorm+' · '+typeLabel(data.type)+' '+data.currency+warn);
   } finally { posSaving=false; }
 }
 const SIDE_N={base:'底仓',buy:'加仓',sell:'减仓'};
@@ -2242,7 +2546,8 @@ function openTrade(id,side){ const p=S.positions.find(x=>x.id===id); if(!p)retur
   document.getElementById('tPos').value=id; document.getElementById('tSide').value=side;
   document.getElementById('tTitle').textContent=(clear?'清仓 · ':side==='sell'?'减仓 · ':'加仓 · ')+p.name;
   document.getElementById('tPriceLab').textContent=side==='sell'?'卖出价':'买入价';
-  document.getElementById('tNow').textContent=`当前持仓 ${fmt(p.qty,4)} · 均价 ${fmt(p.cost,4)} ${p.currency||''}`;
+  const iacc=resolvedInvestAcc(p);
+  document.getElementById('tNow').textContent=`当前持仓 ${fmt(p.qty,4)} · 均价 ${fmt(p.cost,4)} ${p.currency||''}`+(iacc?` · 闲钱 ${money(idleCash(iacc), accCurrency(iacc))}`:'');
   document.getElementById('tDate').value=today(); document.getElementById('tFee').value=''; document.getElementById('tNote').value=clear?'清仓':'';
   document.getElementById('tQty').value=clear?(p.qty??''):'';
   tradeCutoff=isAfterCutoffNow();
@@ -2252,17 +2557,32 @@ function tradeDraft(){ const p=S.positions.find(x=>x.id===document.getElementByI
   return {p,t:{id:uid(),side,date:document.getElementById('tDate').value||today(),afterCutoff:p.type==='fund'?tradeCutoff:false,qty,price,fee,note:document.getElementById('tNote').value.trim(),ts:Date.now()}}; }
 function tradePreview(){ const d=tradeDraft(), el=document.getElementById('tPrev'); if(!d||!(d.t.qty>0)||!(d.t.price>0)){ el.textContent=''; return; }
   const c=JSON.parse(JSON.stringify(d.p)); c.trades.push(d.t); recalcPos(c);
-  const cash=toCNY(d.t.qty*d.t.price+(d.t.side==='sell'?-1:1)*(+d.t.fee||0), d.p.currency);
-  el.textContent=(d.t.side==='sell'?`卖出后：剩 ${fmt(c.qty,4)} · 均价 ${fmt(c.cost,4)} · 本笔实现 ${fmtP(c.trades.find(x=>x.id===d.t.id).pnl)} · 卖出约 ¥${fmt(cash)}`:`加仓后：共 ${fmt(c.qty,4)} · 均价 ${fmt(c.cost,4)} · 本笔约 ¥${fmt(cash)}`); }
+  const acc=resolvedInvestAcc(d.p);
+  const cur=acc?accCurrency(acc):(d.p.currency||'CNY');
+  const delta=convertAmt(tradeCashNative(d.t), d.p.currency||'CNY', cur);
+  const after=acc?idleCash(acc)+delta:null;
+  const cashBit=d.t.side==='sell'
+    ? `回到闲钱 ${money(delta, cur)}`
+    : `扣闲钱 ${money(-delta, cur)}`;
+  el.textContent=(d.t.side==='sell'
+    ? `卖出后：剩 ${fmt(c.qty,4)} · 均价 ${fmt(c.cost,4)} · 本笔实现 ${fmtP(c.trades.find(x=>x.id===d.t.id).pnl)} · ${cashBit}`
+    : `加仓后：共 ${fmt(c.qty,4)} · 均价 ${fmt(c.cost,4)} · ${cashBit}`)
+    +(after!=null?` · 之后闲钱 ${money(after, cur)}`+(after<-0.005?'（将为负）':''):''); }
 function saveTrade(){ const d=tradeDraft(); if(!d) return; const {p,t}=d;
   if(!(t.qty>0)||!(t.price>0)) return toast('请填数量和价格');
   if(t.side==='sell'&&t.qty>(+p.qty||0)+1e-9) return toast('减仓数量不能超过当前持仓 '+fmt(p.qty,4));
   p.trades.push(t); recalcPos(p);
+  const left=settleTradeCash(p, t);
   save(); closeM('tradeModal'); renderAll();
-  toast(t.side==='sell'?((+p.qty||0)<=1e-10?'已清仓，移入历史持仓':'已减仓'):'已加仓 · 均价 '+fmt(p.cost,4)); }
+  const warn=left!=null&&left<-0.005?('，闲钱已为负 '+money(left, accCurrency(resolvedInvestAcc(p)))):'';
+  toast((t.side==='sell'?((+p.qty||0)<=1e-10?'已清仓，卖出回到闲钱':'已减仓，卖出回到闲钱'):'已加仓 · 均价 '+fmt(p.cost,4))+warn); }
 function delTrade(pid,tid){ const p=S.positions.find(x=>x.id===pid); if(!p||!confirm('删除这笔记录？'))return;
-  p.trades=p.trades.filter(t=>t.id!==tid||t.side==='base'); recalcPos(p); save(); renderAll(); }
+  const t=(p.trades||[]).find(x=>x.id===tid&&x.side!=='base');
+  if(t) reverseTradeCash(p, t);
+  p.trades=p.trades.filter(x=>x.id!==tid||x.side==='base'); recalcPos(p); save(); renderAll(); }
 function delPos(id){ if(!confirm('删除持仓？'))return;
+  const p=S.positions.find(x=>x.id===id);
+  if(p){ ensureTrades(p); (p.trades||[]).forEach(t=>reverseTradeCash(p,t)); }
   S.positions=S.positions.filter(x=>x.id!==id); save(); renderAll(); }
 function openPrice(id){ const p=S.positions.find(x=>x.id===id); if(!p)return;
   document.getElementById('prId').value=id; document.getElementById('prLab').textContent=p.name+' 价格'; document.getElementById('prVal').value=p.price??''; openM('priceModal'); }
@@ -2285,8 +2605,10 @@ function runDca(id){
   const price=+pos.price||+pos.cost||1;
   const addQty=d.amount/price;
   ensureTrades(pos);
-  pos.trades.push({id:uid(),side:'buy',date:today(),afterCutoff:isAfterCutoffNow(),qty:addQty,price:price,fee:0,note:'定投',ts:Date.now()});
+  const trade={id:uid(),side:'buy',date:today(),afterCutoff:isAfterCutoffNow(),qty:addQty,price:price,fee:0,note:'定投',ts:Date.now()};
+  pos.trades.push(trade);
   recalcPos(pos);
+  const left=settleTradeCash(pos, trade);
   // 推进下次日期
   const n=new Date((d.nextDate||today())+'T12:00:00');
   if(d.cycle==='daily') n.setDate(n.getDate()+1);
@@ -2295,7 +2617,8 @@ function runDca(id){
   else n.setMonth(n.getMonth()+1);
   d.nextDate=n.getFullYear()+'-'+String(n.getMonth()+1).padStart(2,'0')+'-'+String(n.getDate()).padStart(2,'0');
   save(); renderAll();
-  toast(`定投成功：+${fmt(addQty,4)} 份`);
+  const warn=left!=null&&left<-0.005?('，闲钱已为负 '+money(left, accCurrency(resolvedInvestAcc(pos)))):'';
+  toast(`定投成功：+${fmt(addQty,4)} 份`+warn);
 }
 
 function openDebtModal(){ document.getElementById('debtId').value=''; document.getElementById('dName').value=''; document.getElementById('dAmt').value='';
@@ -2327,7 +2650,7 @@ function saveLedger(e){
   const date=document.getElementById('ledDate').value||today();
   if(!accId) return toast('请先添加账户');
   const acc=S.accounts.find(a=>a.id===accId);
-  if(acc && !isLegacyInvestAcc(acc)){
+  if(acc && !isInvestAcc(acc)){
     if(type==='expense') acc.balance=(+acc.balance||0)-amount;
     else if(type==='income') acc.balance=(+acc.balance||0)+amount;
   }
@@ -2345,7 +2668,7 @@ function exportAll(){
 function importAll(ev){
   const f=ev.target.files[0]; if(!f)return;
   const r=new FileReader();
-  r.onload=()=>{ try{ const d=JSON.parse(r.result); S={...S,...d}; save(); renderAll(); toast('导入成功'); }catch(e){ toast('解析失败'); } };
+  r.onload=()=>{ try{ const d=JSON.parse(r.result); S={...S,...d}; migrateInvestCash(); save(); renderAll(); toast('导入成功'); }catch(e){ toast('解析失败'); } };
   r.readAsText(f); ev.target.value='';
 }
 function clearAll(){ if(!confirm('确定清空全部数据？'))return;
@@ -2362,7 +2685,7 @@ function setQuickAcc(id){ S.quickAccId=id||''; save(); }
 function quickLink(){ return location.origin+location.pathname.replace(/[^/]*$/,'')+'quick.html'; }
 function renderQuick(){
   const sel=document.getElementById('qaAcc'); if(!sel) return;
-  const accs=S.accounts.filter(a=>!isLegacyInvestAcc(a));
+  const accs=S.accounts.filter(a=>!isInvestAcc(a));
   const cur=(AMQuick.pickAccount(S,'')||{}).id||'';
   sel.innerHTML=accs.map(a=>`<option value="${a.id}" ${a.id===cur?'selected':''}>${esc(a.name)}</option>`).join('')||'<option value="">请先添加账户</option>';
   document.getElementById('qaLink').textContent=quickLink();
@@ -2415,7 +2738,7 @@ function switchTab(name){
 }
 document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>switchTab(t.dataset.t)));
 
-window.__am={classifyLocal,pickSuggest,parseHint,mapHit,confirmAsset,buildBookEvents,goalTargetOf,weekBounds,MILESTONES,isCnFundCode,fallbackGuess,confirmSix};
+window.__am={classifyLocal,pickSuggest,parseHint,mapHit,confirmAsset,buildBookEvents,goalTargetOf,weekBounds,MILESTONES,isCnFundCode,fallbackGuess,confirmSix,isInvestAcc,idleCash,assetTotals,convertAmt,migrateInvestCash,raw:()=>S};
 load();
 handleUrlAdd();
 document.getElementById('ledDate').value=today();
