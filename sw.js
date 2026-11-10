@@ -1,6 +1,6 @@
 // 全能资产管家 service worker: app shell cache-first, price/rate APIs network-only.
 const PREFIX = 'asset-manager-';
-const CACHE = PREFIX + 'v10'; // v10：账户互转功能（index.html 在 SHELL 缓存里，升版清掉旧缓存）
+const CACHE = PREFIX + 'v11'; // v11：界面改版、资产配置 / 明细账本 / 收益目标、自动识别类型币种
 const CHART_JS = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js';
 const SHELL = [
   './',
