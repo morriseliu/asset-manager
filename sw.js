@@ -1,6 +1,6 @@
 // 全能资产管家 service worker: app shell cache-first, price/rate APIs network-only.
 const PREFIX = 'asset-manager-';
-const CACHE = PREFIX + 'v12'; // v12：投资账户拆成持仓市值与闲钱，闲钱可与其他账户互转
+const CACHE = PREFIX + 'v13'; // v13：金额卡片改为总额主数字 + 两栏 + 占比条，窄屏不再把数字截出屏幕
 const CHART_JS = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js';
 const SHELL = [
   './',

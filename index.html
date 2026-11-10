@@ -43,12 +43,12 @@
     html{-webkit-text-size-adjust:100%}
     body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC","Hiragino Sans GB","Microsoft YaHei","Noto Sans CJK SC","WenQuanYi Micro Hei","Droid Sans Fallback",sans-serif;background:var(--bg);color:var(--text);min-height:100vh;line-height:1.45;font-size:15px;letter-spacing:-.011em}
     @media (min-width:880px){ body{background:#E7E1F6} }
-    .shell{max-width:480px;margin:0 auto;min-height:100vh;background:var(--bg);position:relative}
+    .shell{max-width:480px;margin:0 auto;min-height:100vh;background:var(--bg);position:relative;overflow-x:clip}
     @media (min-width:880px){
       .shell{box-shadow:0 0 0 1px rgba(80,60,140,.05),0 18px 50px rgba(60,40,120,.12)}
     }
     .num,.sum-v,.item-v,.item-pnl,.stat-b .v,.cal-d,.ev-amt,.goal-amt{font-variant-numeric:tabular-nums;font-feature-settings:"tnum"}
-    .container{padding:14px 16px calc(var(--tabbar) + var(--sb) + 28px)}
+    .container{padding:14px 16px calc(var(--tabbar) + var(--sb) + 88px)}
     svg.i{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}
 
     .topbar{position:sticky;top:0;z-index:40;background:linear-gradient(180deg,#8A72FF 0%,#6C4DFF 100%);color:#fff;
@@ -65,11 +65,10 @@
     .hero .sum-l{font-size:12.5px;opacity:.85}
     .hero .sum-v{font-size:34px;font-weight:750;letter-spacing:-.03em;line-height:1.15;margin-top:2px}
     .hero-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px 12px;margin-top:14px}
+    .hero-grid > div{min-width:0}
     .hero-grid .sum-l{font-size:12px}
-    .hero-grid .sum-v{font-size:16px;font-weight:700;margin-top:1px}
-    .hero-split{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:12px;padding-top:12px;border-top:1px solid rgba(255,255,255,.2)}
-    .hero-split .sum-l{font-size:11px}
-    .hero-split .sum-v{font-size:14px;font-weight:700;margin-top:1px}
+    .hero-grid .sum-v{font-size:15px;font-weight:700;margin-top:1px;white-space:nowrap}
+    #netWorth{font-size:clamp(26px,7.4vw,34px)}
     .hero .up{color:#fff}.hero .down{color:#C9FFE6}.hero .neu{color:rgba(255,255,255,.82);font-size:14px!important;font-weight:600}
 
     .tabs{position:fixed;left:50%;transform:translateX(-50%);bottom:0;width:100%;max-width:480px;z-index:60;display:flex;justify-content:space-around;
@@ -87,10 +86,11 @@
     .item{padding:12px 0;position:relative}
     .item + .item{border-top:.5px solid var(--sep)}
     .item-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
-    .item-name{font-weight:650;font-size:16px;color:var(--text)}
+    .item-top > div:first-child{flex:1;min-width:0}
+    .item-name{font-weight:650;font-size:16px;color:var(--text);overflow-wrap:anywhere}
     .item-meta{font-size:12.5px;color:var(--muted);margin-top:3px;line-height:1.45}
     .item-r{text-align:right;flex-shrink:0}
-    .item-v{font-weight:700;font-size:16px}
+    .item-v{font-weight:700;font-size:16px;white-space:nowrap}
     .item-pnl{font-size:13px;font-weight:650}
     .item-pnl.up,.up{color:var(--up)}.item-pnl.down,.down{color:var(--down)}.neu{color:var(--muted)}
     .badge{display:inline-block;padding:1px 7px;font-size:11px;font-weight:700;border-radius:999px;background:var(--accent-soft);color:var(--accent);margin-right:4px}
@@ -105,7 +105,31 @@
       .badge.fund{color:#3DDC97}.badge.crypto{color:#F5C451}.badge.other{color:#FF9BC0}
       .badge.invest{background:rgba(143,180,255,.16);color:#B7D0FF}
     }
-    .stat-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;padding-bottom:8px}
+    .money{min-width:0;padding:2px 0 8px}
+    .money-k{font-size:12px;font-weight:650;color:var(--muted)}
+    .money-main{font-size:clamp(26px,7.4vw,34px);font-weight:780;letter-spacing:-.03em;line-height:1.15;margin:2px 0 10px;font-variant-numeric:tabular-nums;white-space:nowrap}
+    .money.compact .money-main{font-size:clamp(22px,6.2vw,28px);margin-bottom:8px}
+    .money-bar{display:flex;height:6px;border-radius:99px;overflow:hidden;background:var(--fill);margin:0 0 10px}
+    .money-bar i{display:block;height:100%;min-width:0}
+    .money-bar i.hold{background:var(--c-stock)}
+    .money-bar i.cash{background:var(--c-cash)}
+    .money-bar i.oth{background:var(--c-fund)}
+    .money-bar i.inc{background:var(--down)}
+    .money-bar i.exp{background:var(--up)}
+    .money-pair{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    .money-pair > div{min-width:0;background:var(--card2);border-radius:14px;padding:10px 10px}
+    .money-pair .l{font-size:12px;color:var(--muted)}
+    .money-pair .v{margin-top:3px;font-weight:750;font-size:15px;line-height:1.25;font-variant-numeric:tabular-nums;white-space:nowrap}
+    .money-pair .v.name{white-space:normal;overflow-wrap:anywhere}
+    .money-line{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-top:8px;min-width:0}
+    .money-line span{color:var(--muted);font-size:12.5px;font-weight:650;flex-shrink:0}
+    .money-line b{font-weight:750;font-size:15px;font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap;min-width:0}
+    #heroMix{margin-top:12px;padding-top:12px;border-top:1px solid rgba(255,255,255,.2)}
+    .hero .money-k,.hero .money-pair .l,.hero .money-line span{color:rgba(255,255,255,.82)}
+    .hero .money-main,.hero .money-pair .v,.hero .money-line b{color:#fff}
+    .hero .money-pair > div{background:rgba(255,255,255,.14)}
+    .hero .money-bar{background:rgba(255,255,255,.22)}
+    .hero .money-bar i.oth{background:rgba(255,255,255,.92)}
 
     .btn-row{display:flex;gap:12px;margin-top:8px;flex-wrap:wrap}
     .btn-sm{font:inherit;font-size:13px;padding:0;border:none;background:none;cursor:pointer;color:var(--accent);font-weight:650}
@@ -122,6 +146,7 @@
     .form-c::placeholder{color:var(--muted);opacity:1}
     select.form-c{appearance:none;-webkit-appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none' stroke='%238E87A3' stroke-width='1.6' stroke-linecap='round'%3E%3Cpath d='M3 4.5l3 3 3-3'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;padding-right:32px}
     .form-r{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .form-r > *{min-width:0}
     #p-record form{padding:4px 0 12px}
 
     .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:13px 16px;border-radius:14px;font:inherit;font-weight:700;font-size:16px;border:none;cursor:pointer}
@@ -147,15 +172,18 @@
     .toolbar input{flex:1;min-width:0}
     .toolbar select{max-width:42%}
     .stat-g{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding-bottom:10px}
-    .stat-b{background:var(--card2);border-radius:14px;padding:10px 12px}
+    .stat-g > *{min-width:0}
+    .stat-b{background:var(--card2);border-radius:14px;padding:10px 12px;min-width:0}
     .stat-b .l{font-size:12px;color:var(--muted)}
-    .stat-b .v{font-size:17px;font-weight:750;margin-top:2px}
-    .chart-w{position:relative;height:168px;padding:4px 0 12px}
+    .stat-b .v{font-size:15px;font-weight:750;margin-top:2px;white-space:nowrap}
+    .chart-w{position:relative;height:168px;padding:4px 0 12px;overflow:hidden;max-width:100%}
+    .chart-w canvas{max-width:100%}
     .weight-bar{height:4px;background:var(--fill);border-radius:99px;margin-top:6px;overflow:hidden;max-width:140px}
     .weight-bar>div{height:100%;background:var(--accent);border-radius:99px}
     .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;text-align:center}
     .cal-h{font-size:11px;color:var(--muted);padding:4px 0}
-    .cal-d{padding:6px 2px;border-radius:10px;font-size:13px;cursor:pointer;min-height:42px}
+    .cal-d{padding:6px 2px;border-radius:10px;font-size:13px;cursor:pointer;min-height:42px;min-width:0;overflow-wrap:anywhere}
+    .cal-d div{font-size:9px;font-weight:500;line-height:1.15;overflow-wrap:anywhere}
     .cal-d.has{font-weight:700}
     .cal-d.up{background:rgba(229,72,77,.12);color:var(--up)}
     .cal-d.down{background:rgba(18,163,106,.12);color:var(--down)}
@@ -178,8 +206,7 @@
     @keyframes pgIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
     @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 
-    .pills,.subtabs{display:flex;gap:8px;overflow-x:auto;padding:2px 0 12px;scrollbar-width:none}
-    .pills::-webkit-scrollbar,.subtabs::-webkit-scrollbar{display:none}
+    .pills,.subtabs{display:flex;flex-wrap:wrap;gap:8px;padding:2px 0 12px}
     .pill,.subtab{flex:none;border:none;background:var(--card);color:var(--text2);border-radius:999px;padding:7px 14px;font:inherit;font-size:13px;font-weight:700;cursor:pointer;box-shadow:var(--shadow)}
     .pill.on,.subtab.on{background:#6C4DFF;color:#fff}
     @media (prefers-color-scheme:dark){.pill.on,.subtab.on{background:#B7A6FF;color:#1A1038}}
@@ -189,18 +216,19 @@
     .alloc-row{display:flex;align-items:center;gap:8px;padding:8px 0}
     .alloc-row + .alloc-row{border-top:.5px solid var(--sep)}
     .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
-    .alloc-row .nm{flex:1;font-weight:650}
-    .alloc-row .amt{font-weight:750}
-    .alloc-row .pct{width:58px;text-align:right;color:var(--muted);font-size:12.5px}
+    .alloc-row .nm{flex:1;min-width:0;font-weight:650;overflow-wrap:anywhere}
+    .alloc-row .amt{font-weight:750;white-space:nowrap}
+    .alloc-row .pct{width:52px;flex-shrink:0;text-align:right;color:var(--muted);font-size:12.5px}
 
-    .goal-top{display:flex;align-items:center;gap:8px;padding:2px 0 6px}
-    .ring{width:118px;height:118px;flex-shrink:0}
+    .goal-top{display:flex;align-items:center;gap:12px;padding:2px 0 4px}
+    .goal-top > div:last-child{min-width:0;flex:1}
+    .ring{width:96px;height:96px;flex-shrink:0}
     .ring .track{stroke:var(--fill)}
     .ring .val{stroke:#6C4DFF}
     @media (prefers-color-scheme:dark){.ring .val{stroke:#B7A6FF}}
     .ring .b{fill:var(--text);font-weight:750}
     .ring .s{fill:var(--muted)}
-    .goal-amt{font-size:32px;font-weight:780;letter-spacing:-.03em;line-height:1.1}
+    .goal-amt{font-size:clamp(26px,7.4vw,32px);font-weight:780;letter-spacing:-.03em;line-height:1.1;margin:2px 0 8px;white-space:nowrap}
     .goal-sub{margin-top:4px;font-size:13px;color:var(--text2);line-height:1.45}
     .ms{display:flex;flex-wrap:wrap;gap:8px;padding:4px 0 12px}
     .ms button{border:none;background:var(--card2);color:var(--text2);border-radius:999px;padding:6px 10px;font:inherit;font-size:12.5px;font-weight:700;cursor:pointer}
@@ -208,10 +236,8 @@
     .ms button.tgt{box-shadow:inset 0 0 0 1.5px var(--accent)}
     .goal-set{display:flex;gap:8px;align-items:center;padding-bottom:12px}
     .goal-set .form-c{flex:1;padding:8px 10px;font-size:14px}
-    .week{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;padding-bottom:14px}
-    .week .c{background:var(--card2);border-radius:16px;padding:12px 8px;text-align:center;min-height:96px;display:flex;flex-direction:column;justify-content:center}
-    .week .l{font-size:12px;color:var(--muted)}
-    .week .v{font-size:15px;font-weight:780;margin-top:8px;line-height:1.3;word-break:break-word}
+    .week{display:block;padding-bottom:14px}
+    .week .c{min-width:0}
 
     .dayh{font-size:13px;font-weight:700;color:var(--muted);padding:14px 2px 2px}
     .dayh + .ev{border-top:none}
@@ -233,10 +259,11 @@
       .tag.close{background:rgba(255,255,255,.06);color:#C8C0DC}
       .tag.xfer{background:rgba(255,155,192,.14);color:#FFC0D6}
     }
-    .ev-amt{font-weight:780;font-size:15px;white-space:nowrap}
+    .ev-amt{font-weight:780;font-size:15px;white-space:nowrap;flex-shrink:0}
     .ev-amt.mute{color:var(--text2);font-weight:700}
     .more-btn{width:100%;border:none;background:transparent;color:var(--accent);font:inherit;font-weight:700;font-size:14px;padding:8px 0 12px;cursor:pointer}
 
+    #pCutoffRow > div,#tCutoffRow > div{flex-wrap:wrap}
     .detect{display:flex;align-items:flex-start;gap:8px;background:var(--card2);border-radius:12px;padding:8px 10px;margin:-2px 0 12px}
     .det-dot{width:8px;height:8px;border-radius:50%;background:var(--muted);margin-top:6px;flex-shrink:0}
     .det-dot.ok{background:var(--c-fund)}.det-dot.warn{background:var(--warning)}.det-dot.wait{background:var(--accent)}
@@ -272,17 +299,15 @@
         <div><div class="sum-l">今日投资盈亏</div><div class="sum-v sm" id="todayPnl">--</div></div>
         <div><div class="sum-l">投资累计盈亏</div><div class="sum-v sm" id="investPnl">--</div></div>
       </div>
-      <div class="hero-split" id="heroMix"></div>
+      <div id="heroMix"></div>
     </div>
     <div class="card" id="goalCard">
       <div class="card-t"><span>收益目标</span><span class="sub" id="goalTier">9 档里程碑</span></div>
       <div class="goal-top">
         <div id="goalRing"></div>
-        <div>
-          <div class="goal-amt" id="goalAmt">¥0</div>
-          <div class="goal-sub" id="goalSub">累计收益相对目标的进度</div>
-        </div>
+        <div class="goal-sub" id="goalSub">累计收益相对目标的进度</div>
       </div>
+      <div class="goal-amt" id="goalAmt">¥0</div>
       <div class="ms" id="goalMs"></div>
       <div class="goal-set">
         <button type="button" class="pill" id="goalAuto" onclick="setGoalAuto()">自动</button>
@@ -300,7 +325,7 @@
     </div>
     <div class="card">
       <div class="card-t">本月收支</div>
-      <div class="stat-g" id="monthStats"></div>
+      <div id="monthStats"></div>
     </div>
     <div class="card">
       <div class="card-t">近期净值</div>
@@ -308,7 +333,7 @@
     </div>
     <div class="card">
       <div class="card-t">资产结构</div>
-      <div class="stat-g" id="homeStats"></div>
+      <div id="homeStats"></div>
     </div>
     <div class="last-u" id="lastU">尚未刷新</div>
     <div class="last-u" id="rateU"></div>
@@ -338,12 +363,10 @@
       </select>
     </div>
     <div class="card">
-      <div class="card-t">
-        <span>持仓 <span id="posCnt" class="sub"></span></span>
-        <span>
-          <button class="btn-sm pri" onclick="openPosModal()">＋ 持仓</button>
-          <button class="btn-sm warn" onclick="openDcaModal()">定投</button>
-        </span>
+      <div class="card-t"><span>持仓 <span id="posCnt" class="sub"></span></span></div>
+      <div class="btn-row" style="margin-top:0">
+        <button class="btn-sm pri" onclick="openPosModal()">＋ 持仓</button>
+        <button class="btn-sm warn" onclick="openDcaModal()">定投</button>
       </div>
       <div id="posList"></div>
     </div>
@@ -399,7 +422,7 @@
     <div id="p-accounts">
       <div class="card">
         <div class="card-t">资产一览</div>
-        <div class="stat-g" id="mineStats"></div>
+        <div id="mineStats"></div>
         <p class="hint" style="margin:0 0 10px">总资产 = 投资持仓 + 投资闲钱 + 其他账户。账户之间互转不改变总资产，也不计入收支和投资盈亏。</p>
       </div>
       <div class="card">
@@ -427,7 +450,7 @@
     <div id="p-record" style="display:none">
       <div class="card">
         <div class="card-t">本月收支汇总</div>
-        <div class="stat-g" id="monthStats2"></div>
+        <div id="monthStats2"></div>
       </div>
       <div class="card">
         <div class="card-t">记一笔</div>
@@ -1236,9 +1259,10 @@ function renderWeek(){
   let n=0;
   (S.positions||[]).forEach(p=>{(p.trades||[]).forEach(t=>{ if(t.date>=range.start&&t.date<=range.end) n++; });});
   const cls=pnl>0?'up':(pnl<0?'down':'');
-  box.innerHTML=`<div class="c"><div class="l">本周盈亏</div><div class="v ${cls}">${fmtSignedYuan(pnl)}</div></div>
-    <div class="c"><div class="l">最佳标的</div><div class="v">${esc(best)}</div></div>
-    <div class="c"><div class="l">交易笔数</div><div class="v">${n} 笔</div></div>`;
+  box.innerHTML=moneyCard({
+    k:'本周盈亏', main:fmtSignedYuan(pnl), mainCls:cls, bar:'',
+    pair:[{l:'最佳标的',v:esc(best),cls:'name'},{l:'交易笔数',v:n+' 笔'}]
+  });
 }
 function renderAlloc(){
   const bar=document.getElementById('allocBar'), rows=document.getElementById('allocRows');
@@ -1789,40 +1813,56 @@ function migrateInvestCash(){
   });
   return ch;
 }
+function moneyBar(parts){
+  const sum=parts.reduce((s,p)=>s+(p.v>0?p.v:0),0);
+  const segs=sum>0?parts.filter(p=>p.v>0).map(p=>`<i class="${p.cls}" style="width:${(p.v/sum*100).toFixed(2)}%"></i>`).join(''):'';
+  return `<div class="money-bar">${segs}</div>`;
+}
+function moneyCard(o){
+  const pair=(o.pair||[]).map(x=>`<div><div class="l">${x.l}</div><div class="v${x.cls?' '+x.cls:''}">${x.v}</div></div>`).join('');
+  return `<div class="money${o.compact?' compact':''}">
+    ${o.k?`<div class="money-k">${o.k}</div>`:''}
+    <div class="money-main${o.mainCls?' '+o.mainCls:''}">${o.main}</div>
+    ${o.bar||''}
+    ${pair?`<div class="money-pair">${pair}</div>`:''}
+    ${o.extra||''}
+  </div>`;
+}
 function renderInvestCash(){
   const box=document.getElementById('investCashBox'); if(!box) return;
   const accs=investAccounts();
   const inv=investValue();
+  const card=(name,mv,idle,idleTxt,cur,compact)=>{
+    const fx=cur&&cur!=='CNY'?`<p class="hint" style="margin-top:6px">闲钱折合 ¥${fmt(idle)}</p>`:'';
+    return `<div class="item">${name?`<div class="item-name" style="margin-bottom:4px">${name}</div>`:''}${moneyCard({
+      compact, k:'总额', main:'¥'+fmt(mv+idle),
+      bar:moneyBar([{v:mv,cls:'hold'},{v:idle,cls:'cash'}]),
+      pair:[{l:'持仓市值',v:'¥'+fmt(mv)},{l:'闲钱',v:idleTxt}],
+      extra:fx
+    })}</div>`;
+  };
   if(!accs.length){
-    box.innerHTML=`<div class="stat-3">
-      <div class="stat-b"><div class="l">总额</div><div class="v">¥${fmt(inv.value)}</div></div>
-      <div class="stat-b"><div class="l">持仓市值</div><div class="v">¥${fmt(inv.value)}</div></div>
-      <div class="stat-b"><div class="l">闲钱</div><div class="v">¥${fmt(0)}</div></div>
-    </div><p class="hint">还没有投资账户。在「我的 → 账户」加上之后，买入从闲钱扣、卖出回到闲钱，也可以和银行卡互转。</p>`;
+    box.innerHTML=card('', inv.value, 0, '¥'+fmt(0), 'CNY', false)+'<p class="hint">还没有投资账户。在「我的 → 账户」加上之后，买入从闲钱扣、卖出回到闲钱，也可以和银行卡互转。</p>';
     return;
   }
   box.innerHTML=accs.map(a=>{
     const mv=accountMvCNY(a), idle=idleCNY(a), cur=accCurrency(a);
     const idleTxt=cur==='CNY'?('¥'+fmt(idleCash(a))):money(idleCash(a),cur);
-    return `<div class="item">
-      <div class="item-name">${esc(a.name)}</div>
-      <div class="stat-3" style="margin-top:8px">
-        <div class="stat-b"><div class="l">总额</div><div class="v">¥${fmt(mv+idle)}</div></div>
-        <div class="stat-b"><div class="l">持仓市值</div><div class="v">¥${fmt(mv)}</div></div>
-        <div class="stat-b"><div class="l">闲钱</div><div class="v">${idleTxt}</div></div>
-      </div>
-      <p class="hint" style="margin-top:4px">总额 = 持仓市值 + 闲钱${cur==='CNY'?'':' · 闲钱折合 ¥'+fmt(idle)}</p>
-    </div>`;
+    return card(esc(a.name), mv, idle, idleTxt, cur, false);
   }).join('');
 }
-function renderAssetMix(id){
+function renderAssetMix(id, withDebt){
   const el=document.getElementById(id); if(!el) return;
   const t=assetTotals();
-  el.innerHTML=`
-    <div class="stat-b"><div class="l">总资产</div><div class="v">¥${fmt(t.assets)}</div></div>
-    <div class="stat-b"><div class="l">其他账户</div><div class="v">¥${fmt(t.other)}</div></div>
-    <div class="stat-b"><div class="l">投资持仓</div><div class="v">¥${fmt(t.mv)}</div></div>
-    <div class="stat-b"><div class="l">投资闲钱</div><div class="v">¥${fmt(t.idle)}</div></div>`;
+  const n=S.positions.filter(p=>(+p.qty||0)>1e-10).length;
+  const debt=debtValue();
+  el.innerHTML=moneyCard({
+    k:'总资产', main:'¥'+fmt(t.assets),
+    bar:moneyBar([{v:t.mv,cls:'hold'},{v:t.idle,cls:'cash'},{v:t.other,cls:'oth'}]),
+    pair:[{l:'投资持仓',v:'¥'+fmt(t.mv)},{l:'投资闲钱',v:'¥'+fmt(t.idle)}],
+    extra:`<div class="money-line"><span>其他账户</span><b>¥${fmt(t.other)}</b></div>`
+      +(withDebt?`<div class="money-pair" style="margin-top:8px"><div><div class="l">待还</div><div class="v down">¥${fmt(debt)}</div></div><div><div class="l">持仓数</div><div class="v">${n}</div></div></div>`:'')
+  });
 }
 
 // ===== 每日收盘自动记录（替代手动「标记收盘」）=====
@@ -1942,19 +1982,13 @@ function renderAll(){
   document.getElementById('lastU').textContent=S.lastRefresh?'上次刷新：'+new Date(S.lastRefresh).toLocaleString('zh-CN'):'尚未刷新';
   renderRates();
 
-  document.getElementById('homeStats').innerHTML=`
-    <div class="stat-b"><div class="l">总资产</div><div class="v">¥${fmt(mix.assets)}</div></div>
-    <div class="stat-b"><div class="l">其他账户</div><div class="v">¥${fmt(mix.other)}</div></div>
-    <div class="stat-b"><div class="l">投资持仓</div><div class="v">¥${fmt(mix.mv)}</div></div>
-    <div class="stat-b"><div class="l">投资闲钱</div><div class="v">¥${fmt(mix.idle)}</div></div>
-    <div class="stat-b"><div class="l">待还</div><div class="v" style="color:var(--danger)">¥${fmt(debt)}</div></div>
-    <div class="stat-b"><div class="l">持仓数</div><div class="v">${S.positions.filter(p=>(+p.qty||0)>1e-10).length}</div></div>`;
-  renderAssetMix('mineStats');
+  document.getElementById('homeStats').innerHTML='';
+  renderAssetMix('homeStats', true);
+  renderAssetMix('mineStats', false);
   const heroMix=document.getElementById('heroMix');
-  if(heroMix) heroMix.innerHTML=`
-    <div><div class="sum-l">投资持仓</div><div class="sum-v sm">¥${fmt(mix.mv)}</div></div>
-    <div><div class="sum-l">投资闲钱</div><div class="sum-v sm">¥${fmt(mix.idle)}</div></div>
-    <div><div class="sum-l">其他账户</div><div class="sum-v sm">¥${fmt(mix.other)}</div></div>`;
+  if(heroMix) heroMix.innerHTML=moneyBar([{v:mix.mv,cls:'hold'},{v:mix.idle,cls:'cash'},{v:mix.other,cls:'oth'}])
+    +`<div class="money-pair"><div><div class="l">投资持仓</div><div class="v">¥${fmt(mix.mv)}</div></div><div><div class="l">投资闲钱</div><div class="v">¥${fmt(mix.idle)}</div></div></div>`
+    +`<div class="money-line"><span>其他账户</span><b>¥${fmt(mix.other)}</b></div>`;
   // 本月收支
   const ym=today().slice(0,7);
   let minc=0, mexp=0;
@@ -1964,11 +1998,12 @@ function renderAll(){
     else if(t.type==='expense') mexp+=(+t.amount||0);
   });
   const mnet=minc-mexp;
-  const monthHtml=`
-    <div class="stat-b"><div class="l">本月收入</div><div class="v down">¥${fmt(minc)}</div></div>
-    <div class="stat-b"><div class="l">本月支出</div><div class="v up">¥${fmt(mexp)}</div></div>
-    <div class="stat-b"><div class="l">本月结余</div><div class="v ${mnet>=0?'down':'up'}">¥${fmt(mnet)}</div></div>
-    <div class="stat-b"><div class="l">记账笔数</div><div class="v">${S.ledger.filter(t=>t.date&&String(t.date).startsWith(ym)).length}</div></div>`;
+  const monthHtml=moneyCard({
+    k:'本月结余', main:'¥'+fmt(mnet), mainCls:mnet>=0?'down':'up',
+    bar:moneyBar([{v:minc,cls:'inc'},{v:mexp,cls:'exp'}]),
+    pair:[{l:'本月收入',v:'¥'+fmt(minc),cls:'down'},{l:'本月支出',v:'¥'+fmt(mexp),cls:'up'}],
+    extra:`<div class="money-line"><span>记账笔数</span><b>${S.ledger.filter(t=>t.date&&String(t.date).startsWith(ym)).length}</b></div>`
+  });
   const ms=document.getElementById('monthStats'); if(ms) ms.innerHTML=monthHtml;
   const ms2=document.getElementById('monthStats2'); if(ms2) ms2.innerHTML=monthHtml;
 
@@ -2013,12 +2048,12 @@ function renderAccounts(){
       const mv=accountMvCNY(a), idle=idleCNY(a), cur=accCurrency(a);
       const idleTxt=cur==='CNY'?('¥'+fmt(idleCash(a))):money(idleCash(a),cur);
       return `<div class="item">
-        <div class="item-top">
-          <div><div class="item-name">${esc(a.name)}</div>
-            <div class="item-meta"><span class="badge invest">投资</span> · 持仓市值 ¥${fmt(mv)} · 闲钱 ${idleTxt}</div>
-          </div>
-          <div class="item-r"><div class="item-v">¥${fmt(mv+idle)}</div></div>
-        </div>
+        <div class="item-name">${esc(a.name)} <span class="badge invest">投资</span></div>
+        ${moneyCard({
+          compact:true, k:'总额', main:'¥'+fmt(mv+idle),
+          bar:moneyBar([{v:mv,cls:'hold'},{v:idle,cls:'cash'}]),
+          pair:[{l:'持仓市值',v:'¥'+fmt(mv)},{l:'闲钱',v:idleTxt}]
+        })}
         <div class="btn-row">
           <button class="btn-sm warn" onclick="openTransfer('${a.id}')">互转</button>
           <button class="btn-sm pri" onclick="editAcc('${a.id}')">编辑</button>
@@ -2074,17 +2109,11 @@ function renderInvest(){
     el.innerHTML=list.map(({p,c})=>{
       const w=((c.valueCNY||c.costCNY||0)/total*100);
       return `<div class="item">
-        <div class="item-top">
-          <div>
-            <div class="item-name">${esc(p.name)}</div>
-            <div class="item-meta"><span class="badge ${p.type}">${typeLabel(p.type)}</span> ${esc(p.symbolNorm||p.symbol||'')} · 权重 ${fmt(w,1)}%</div>
-            <div class="weight-bar"><div style="width:${Math.min(100,w)}%"></div></div>
-          </div>
-          <div class="item-r">
-            <div class="item-v">${c.valueCNY!=null?'¥'+fmt(c.valueCNY):'--'}</div>
-            <div class="item-pnl ${c.cumulativeCNY>=0?'up':'down'}">累计 ${fmtP(c.cumulativeCNY)}</div>
-          </div>
-        </div>
+        <div class="item-name">${esc(p.name)}</div>
+        <div class="item-meta"><span class="badge ${p.type}">${typeLabel(p.type)}</span> ${esc(p.symbolNorm||p.symbol||'')} · 权重 ${fmt(w,1)}%</div>
+        <div class="weight-bar"><div style="width:${Math.min(100,w)}%"></div></div>
+        <div class="item-v">${c.valueCNY!=null?'¥'+fmt(c.valueCNY):'--'}</div>
+        <div class="item-pnl ${c.cumulativeCNY>=0?'up':'down'}">累计 ${fmtP(c.cumulativeCNY)}</div>
         <div class="item-meta">数量 ${fmt(p.qty,4)} · 成本 ${fmt(p.cost)} · 现价 ${c.has?fmt(p.price):'<span style="color:var(--warning)">待更新</span>'}
           ${c.dayPnlCNY!=null?` · <span class="item-pnl ${c.dayPnlCNY>=0?'up':'down'}">今 ${fmtP(c.dayPnlCNY)}</span>`:''}
         </div>
