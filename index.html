@@ -1315,7 +1315,7 @@ function fmtQtyShort(n){ const x=+n||0; if(!isFinite(x)) return '--'; if(Math.ab
 function unitOf(p){ return p&&p.type==='fund'?'份':(p&&p.type==='crypto'?'个':'股'); }
 function buildBookEvents(){
   const ev=[];
-  const trail=balanceTrail();
+  const trail=assetTrail();
   (S.positions||[]).forEach(p=>{
     ensureTrades(p);
     const tr=p.trades.slice().sort((a,b)=>String(a.date).localeCompare(String(b.date))||((a.ts||0)-(b.ts||0)));
@@ -1329,26 +1329,24 @@ function buildBookEvents(){
         ev.push({date,sort:t.ts||0,filter:'sell',tag:clears?'清仓':'减仓',tagCls:'sell',dot:'sell',
           title:(clears?'清仓 ':'减仓 ')+(p.name||p.symbol||'')+' '+fmtQtyShort(q)+unitOf(p),
           sub:'@ '+fmt(price,4)+(fee?(' · 费 '+fmt(fee)):'')+(t.note?(' · '+t.note):''),
-          amount:toCNY(q*price-fee,p.currency),tone:'cash',bals:trail['tr:'+p.id+':'+t.id]});
+          amount:toCNY(q*price-fee,p.currency),tone:'cash',asset:trail['tr:'+p.id+':'+t.id]});
       }else{
         qty+=q;
         const isDca=String(t.note||'').indexOf('定投')>=0, isBase=t.side==='base';
         ev.push({date,sort:t.ts||(isBase?1:0),filter:isDca?'dca':'buy',tag:isDca?'定投':(isBase?'建仓':'加仓'),tagCls:isDca?'dca':'buy',dot:isDca?'dca':'buy',
           title:(isDca?'定投 ':(isBase?'建仓 ':'加仓 '))+(p.name||p.symbol||'')+' '+fmtQtyShort(q)+unitOf(p),
           sub:'@ '+fmt(price,4)+(fee?(' · 费 '+fmt(fee)):'')+(t.note&&!isDca?(' · '+t.note):''),
-          amount:-toCNY(q*price+fee,p.currency),tone:'cash',bals:trail['tr:'+p.id+':'+t.id]});
+          amount:-toCNY(q*price+fee,p.currency),tone:'cash',asset:trail['tr:'+p.id+':'+t.id]});
       }
     });
   });
   (S.ledger||[]).forEach(t=>{
     if(!t||!t.date||(t.type!=='income'&&t.type!=='expense')) return;
-    const rows=trail['led:'+t.id];
-    if(!rows||!rows.length) return;
     const acc=S.accounts.find(a=>a.id===t.accId);
     ev.push({date:t.date,sort:t.createdAt||0,filter:t.type==='income'?'income':'expense',
       tag:t.type==='income'?'收入':'支出',tagCls:t.type==='income'?'buy':'sell',dot:t.type==='income'?'buy':'sell',
       title:t.note||(t.type==='income'?'收入':'支出'),sub:acc?acc.name:'',
-      amount:t.type==='income'?(+t.amount||0):-(+t.amount||0),tone:'pnl',bals:rows});
+      amount:t.type==='income'?(+t.amount||0):-(+t.amount||0),tone:'pnl',asset:trail['led:'+t.id]});
   });
   (S.history||[]).forEach(h=>{
     if(!h||!h.date) return;
@@ -1369,14 +1367,14 @@ function buildBookEvents(){
       amount=+t.amount||0;
     }else return;
     ev.push({date:t.date,sort:t.ts||0,filter:'xfer',tag:'转账',tagCls:'xfer',dot:'xfer',title,sub,amount,tone:'mute',
-      bals:t.fromId&&t.toId?[].concat(trail['xfer:'+t.id+':from']||[], trail['xfer:'+t.id+':to']||[]):null});
+      asset:trail['xfer:'+t.id]});
   });
   fxAccounts().forEach(a=>{
     const fx=a.fx||{};
     (fx.days||[]).forEach(d=>{
       if(!d||!d.date) return;
       ev.push({date:d.date, sort:8e15, filter:'fx', tag:'外汇', tagCls:'fx', dot:'fx', title:'外汇盈亏',
-        sub:'$'+fmt(d.pnlUSD)+' · 汇率 '+fmtRate(d.rate), amount:+d.pnlCNY||0, tone:'pnl'});
+        sub:'$'+fmt(d.pnlUSD)+' · 汇率 '+fmtRate(d.rate), amount:+d.pnlCNY||0, tone:'pnl', asset:trail['fxd:'+a.id+':'+d.date]});
     });
     (fx.flows||[]).forEach(f=>{
       if(!f||!f.date) return;
@@ -1384,7 +1382,7 @@ function buildBookEvents(){
       const other=f.otherId?accNameById(f.otherId):'';
       const title=usd>=0?(other?other+' → '+a.name:a.name+' 入金'):(other?a.name+' → '+other:a.name+' 出金');
       ev.push({date:f.date, sort:f.id?1:0, filter:'xfer', tag:'转账', tagCls:'xfer', dot:'xfer', title,
-        sub:(f.note||'外汇资金')+' · $'+fmt(Math.abs(usd)), amount:cny, tone:'mute', bals:trail['fxf:'+f.id]});
+        sub:(f.note||'外汇资金')+' · $'+fmt(Math.abs(usd)), amount:cny, tone:'mute', asset:trail['fxf:'+f.id]});
     });
   });
   return ev;
@@ -1408,10 +1406,12 @@ function renderBook(){
   let html='', prev='';
   list.forEach(e=>{
     if(e.date!==prev){ html+=`<div class="dayh">${shortMD(e.date)} · ${weekDayName(e.date)}</div>`; prev=e.date; }
-    const amt=e.tone==='mute'
-      ? `<div class="ev-amt mute">¥${fmt(Math.abs(e.amount))}</div>`
-      : `<div class="ev-amt ${e.amount>=0?'up':'down'}">${fmtSignedYuan(e.amount)}</div>`;
-    html+=`<div class="ev"><span class="ev-dot ${e.dot}"></span><div class="ev-bd"><div class="ev-tt"><span>${esc(e.title)}</span><span class="tag ${e.tagCls}">${esc(e.tag)}</span></div><div class="item-meta">${esc(e.sub||'')}</div>${balNoteHtml(e.bals)}</div>${amt}</div>`;
+    const amt=(e.filter==='income'||e.filter==='expense')
+      ? `<div class="ev-amt" style="color:${e.filter==='income'?'var(--success)':'var(--danger)'}">${fmtSignedYuan(e.amount)}</div>`
+      : (e.tone==='mute'
+        ? `<div class="ev-amt mute">¥${fmt(Math.abs(e.amount))}</div>`
+        : `<div class="ev-amt ${e.amount>=0?'up':'down'}">${fmtSignedYuan(e.amount)}</div>`);
+    html+=`<div class="ev"><span class="ev-dot ${e.dot}"></span><div class="ev-bd"><div class="ev-tt"><span>${esc(e.title)}</span><span class="tag ${e.tagCls}">${esc(e.tag)}</span></div><div class="item-meta">${esc(e.sub||'')}</div>${balNoteHtml(e.asset)}</div>${amt}</div>`;
   });
   el.innerHTML=html;
 }
@@ -2285,22 +2285,109 @@ function balanceTrail(){
   });
   return map;
 }
-function balNoteHtml(rows){
-  if(!rows||!rows.length) return '';
-  return rows.map(r=>{
-    const a=S.accounts.find(x=>x.id===r.accId);
-    const cur=accCurrency(a);
-    const who=rows.length>1&&a?esc(a.name)+' ':'';
-    return `<div class="balnote">${who}原金额 ${money(r.before,cur)}</div><div class="balnote">${who}余额 ${money(r.after,cur)}</div>`;
-  }).join('');
+function balNoteHtml(row){
+  if(!row||!isFinite(+row.before)||!isFinite(+row.after)) return '';
+  return `<div class="balnote">原总资产 ¥${fmt(row.before)}</div><div class="balnote">总资产 ¥${fmt(row.after)}</div>`;
 }
-function balToastText(rows){
-  return (rows||[]).map(r=>{
-    const a=S.accounts.find(x=>x.id===r.accId);
-    const cur=accCurrency(a);
-    const who=(rows.length>1&&a)?a.name+' ':'';
-    return who+'原金额 '+money(r.before,cur)+' 余额 '+money(r.after,cur);
-  }).join('\n');
+function balToastText(row){
+  if(!row||!isFinite(+row.before)||!isFinite(+row.after)) return '';
+  return '原总资产 ¥'+fmt(row.before)+' 总资产 ¥'+fmt(row.after);
+}
+/** 一笔记录对总资产的净影响（人民币）。转账和按成本买卖只动自己的钱，差额只剩手续费或实现盈亏。 */
+function assetEffectList(){
+  const ev=[];
+  (S.ledger||[]).forEach(t=>{
+    if(!t||!t.id||!t.date) return;
+    let effect=0;
+    if(t.type==='income'||t.type==='expense'){
+      const acc=S.accounts.find(a=>a.id===t.accId);
+      if(acc&&!isInvestAcc(acc)&&!isFxAcc(acc)){
+        const cny=toCNY(+t.amount||0, accCurrency(acc));
+        effect=t.type==='income'?cny:-cny;
+      }
+    }
+    ev.push({key:'led:'+t.id, date:t.date, ts:t.createdAt||0, effect});
+  });
+  (S.transfers||[]).forEach(t=>{
+    if(!t||!t.id||!t.date) return;
+    ev.push({key:'xfer:'+t.id, date:t.date, ts:t.ts||0, effect:0});
+  });
+  (S.positions||[]).forEach(p=>{
+    ensureTrades(p);
+    const cur=p.currency||'CNY';
+    const tr=p.trades.slice().sort((a,b)=>(a.side==='base'?-1:b.side==='base'?1:0)||String(a.date).localeCompare(String(b.date))||((a.ts||0)-(b.ts||0)));
+    let qty=0, gross=0;
+    tr.forEach(t=>{
+      if(!t||!t.id||!t.date) return;
+      const q=+t.qty||0, pr=+t.price||0, f=+t.fee||0;
+      let effect=0;
+      if(t.side==='sell'){
+        const avg=qty?gross/qty:0;
+        const sq=Math.min(q, qty);
+        effect=toCNY(sq*(pr-avg)-f, cur);
+        gross-=avg*sq; qty=Math.max(0, qty-sq);
+      }else{
+        effect=toCNY(t.settled?-f:(q*pr-f), cur);
+        qty+=q; gross+=q*pr;
+      }
+      ev.push({key:'tr:'+p.id+':'+t.id, date:t.date, ts:t.ts||(t.side==='base'?1:0), effect});
+    });
+  });
+  fxAccounts().forEach(a=>{
+    const fx=a.fx||{};
+    (fx.days||[]).forEach(d=>{
+      if(!d||!d.date) return;
+      ev.push({key:'fxd:'+a.id+':'+d.date, date:d.date, ts:8e15, effect:+d.pnlCNY||0});
+    });
+    (fx.flows||[]).forEach(f=>{
+      if(!f||!f.id||!f.date) return;
+      const effect=f.otherId?0:toCNY(+f.amountUSD||0, 'USD');
+      ev.push({key:'fxf:'+f.id, date:f.date, ts:1, effect});
+    });
+  });
+  return ev;
+}
+function fxCnyAsOf(date){
+  let s=0;
+  fxAccounts().forEach(a=>{
+    let usd=+a.balance||0;
+    const fx=a.fx||{};
+    (fx.days||[]).forEach(d=>{ if(d&&d.date>date) usd-=(+d.pnlUSD||0); });
+    (fx.flows||[]).forEach(f=>{ if(f&&f.date>date) usd-=(+f.amountUSD||0); });
+    s+=toCNY(usd, 'USD');
+  });
+  return s;
+}
+/** 那天收盘时的总资产。优先用已冻结的月末快照，否则用当日持仓市值加回推的账户余额。 */
+function closingAssets(date){
+  if(!date||date>=today()) return null;
+  const months=S.assetMonths||[];
+  const saved=months.find(m=>m&&m.frozen&&m.asOf===date&&m.source!=='history'&&isFinite(+m.assets));
+  if(saved) return roundMoney(+saved.assets);
+  const h=(S.history||[]).find(x=>x&&x.date===date);
+  if(h) return roundMoney(cnyBalances(balancesAsOf(date))+(+h.totalValue||0)+fxCnyAsOf(date));
+  const back=months.find(m=>m&&m.frozen&&m.asOf===date&&isFinite(+m.assets));
+  return back?roundMoney(+back.assets):null;
+}
+/** 从当前总资产按每笔净影响往回推。有当天收盘总资产时，以它为准，避免行情涨跌把前几天带偏。 */
+function assetTrail(){
+  const by={};
+  assetEffectList().forEach(e=>{ (by[e.date]||(by[e.date]=[])).push(e); });
+  const map={};
+  let carried=roundMoney(assetTotals().assets);
+  const todayStr=today();
+  Object.keys(by).sort().reverse().forEach(date=>{
+    let cursor;
+    if(date>=todayStr) cursor=carried;
+    else { const anchor=closingAssets(date); cursor=anchor==null?carried:anchor; }
+    by[date].slice().sort((a,b)=>(b.ts||0)-(a.ts||0)||String(b.key).localeCompare(String(a.key))).forEach(e=>{
+      const after=cursor, before=after-e.effect;
+      cursor=before;
+      map[e.key]={before:roundMoney(before), after:roundMoney(after)};
+    });
+    carried=roundMoney(cursor);
+  });
+  return map;
 }
 function balancesAsOf(date){
   const later={};
@@ -2624,7 +2711,7 @@ function renderLedger(){
   const el=document.getElementById('ledList');
   const list=[...S.ledger].slice(0,30);
   if(!list.length){ el.innerHTML='<div class="empty">暂无记账</div>'; return; }
-  const trail=balanceTrail();
+  const trail=assetTrail();
   el.innerHTML=list.map(t=>{
     const acc=S.accounts.find(a=>a.id===t.accId);
     const sign=t.type==='income'?'+':'-';
@@ -2823,8 +2910,7 @@ function saveTransfer(){
   S.transfers.push({id:uid(),fromId,toId,amount:roundMoney(amt),amountIn:recv,fromCur:fc,toCur:tc,date,note,ts:Date.now()});
   const xfer=S.transfers[S.transfers.length-1];
   save(); closeM('xferModal'); renderAll();
-  const rows=[].concat((balanceTrail()['xfer:'+xfer.id+':from'])||[], (balanceTrail()['xfer:'+xfer.id+':to'])||[]);
-  const balLine=balToastText(rows);
+  const balLine=balToastText(assetTrail()['xfer:'+xfer.id]);
   toast(balLine?('已转账\n'+balLine):'已转账');
 }
 function xferLine(t){
@@ -3058,7 +3144,7 @@ function saveTrade(){ const d=tradeDraft(); if(!d) return; const {p,t}=d;
   const left=settleTradeCash(p, t);
   save(); closeM('tradeModal'); renderAll();
   const warn=left!=null&&left<-0.005?('，闲钱已为负 '+money(left, accCurrency(resolvedInvestAcc(p)))):'';
-  const note=balToastText((balanceTrail()['tr:'+p.id+':'+t.id])||[]);
+  const note=balToastText(assetTrail()['tr:'+p.id+':'+t.id]);
   toast((t.side==='sell'?((+p.qty||0)<=1e-10?'已清仓，卖出回到闲钱':'已减仓，卖出回到闲钱'):'已加仓 · 均价 '+fmt(p.cost,4))+warn+(note?'\n'+note:'')); }
 function delTrade(pid,tid){ const p=S.positions.find(x=>x.id===pid); if(!p||!confirm('删除这笔记录？'))return;
   const t=(p.trades||[]).find(x=>x.id===tid&&x.side!=='base');
@@ -3142,7 +3228,7 @@ function saveLedger(e){
   S.ledger.unshift({id,type,amount,accId,note,date,createdAt:Date.now()});
   save(); renderAll();
   document.getElementById('ledAmt').value=''; document.getElementById('ledNote').value='';
-  const balLine=balToastText((balanceTrail()['led:'+id])||[]);
+  const balLine=balToastText(assetTrail()['led:'+id]);
   toast(balLine?('已记账\n'+balLine):'已记账');
 }
 
@@ -3193,7 +3279,7 @@ function handleUrlAdd(){
   if(!added.length) return;
   save();
   if(localStorage.getItem('am_sync_token')) AMQuick.addPending(localStorage,[e]);
-  const note=balToastText((balanceTrail()['led:'+added[0].id])||[]);
+  const note=balToastText(assetTrail()['led:'+added[0].id]);
   setTimeout(()=>toast(`已记账 ${e.type==='income'?'+':''}¥${fmt(e.amount)}${e.category?' · '+e.category:''}`+(note?'\n'+note:'')),300);
 }
 

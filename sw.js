@@ -1,6 +1,6 @@
 // 全能资产管家 service worker: app shell cache-first, price/rate APIs network-only.
 const PREFIX = 'asset-manager-';
-const CACHE = PREFIX + 'v16'; // v16：月末资产曲线；记账显示原金额和余额
+const CACHE = PREFIX + 'v17'; // v17：账本原总资产按总资产回放；收支颜色与我的一致
 const CHART_JS = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js';
 const SHELL = [
   './',
