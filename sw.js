@@ -1,6 +1,6 @@
 // 全能资产管家 service worker: app shell cache-first, price/rate APIs network-only.
 const PREFIX = 'asset-manager-';
-const CACHE = PREFIX + 'v15'; // v15：美股跨北京午夜仍按当个交易日算今日盈亏；打开和回到前台自动刷新行情
+const CACHE = PREFIX + 'v16'; // v16：月末资产曲线；记账显示原金额和余额
 const CHART_JS = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js';
 const SHELL = [
   './',

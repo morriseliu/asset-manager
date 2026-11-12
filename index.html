@@ -180,6 +180,15 @@
     .stat-b .l{font-size:12px;color:var(--muted)}
     .stat-b .v{font-size:15px;font-weight:750;margin-top:2px;white-space:nowrap}
     .chart-w{position:relative;height:168px;padding:4px 0 12px;overflow:hidden;max-width:100%}
+    .mscroll{display:flex;gap:12px;overflow-x:auto;width:100%;min-width:0;max-width:100%;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;padding:4px 0 12px}
+    .mscroll::-webkit-scrollbar{height:0}
+    .mcol{flex:0 0 auto;scroll-snap-align:end;display:flex;flex-direction:column;justify-content:flex-end;min-height:168px;min-width:88px}
+    .mbar{width:100%;min-width:8px;border-radius:8px 8px 4px 4px;background:var(--accent);min-height:4px}
+    .mcol .ym{margin-top:8px;font-size:13px;font-weight:700;white-space:nowrap}
+    .mcol .tagline{font-size:12px;color:var(--muted);white-space:nowrap}
+    .mcol .v{margin-top:2px;font-size:15px;font-weight:750;white-space:nowrap;font-variant-numeric:tabular-nums}
+    .mcol .chg{font-size:13px;font-weight:700;white-space:nowrap;font-variant-numeric:tabular-nums}
+    .balnote{font-size:13px;color:var(--text2);margin-top:2px;white-space:nowrap;font-variant-numeric:tabular-nums}
     .chart-w canvas{max-width:100%}
     .weight-bar{height:4px;background:var(--fill);border-radius:99px;margin-top:6px;overflow:hidden;max-width:140px}
     .weight-bar>div{height:100%;background:var(--accent);border-radius:99px}
@@ -332,9 +341,9 @@
       <div class="card-t">本月收支</div>
       <div id="monthStats"></div>
     </div>
-    <div class="card">
-      <div class="card-t">近期净值</div>
-      <div class="chart-w"><canvas id="navChart"></canvas></div>
+    <div class="card" id="monthAssetCard">
+      <div class="card-t"><span>月末资产</span><span class="sub" id="monthAssetSub">总资产</span></div>
+      <div class="mscroll" id="monthScroll"></div>
     </div>
     <div class="card">
       <div class="card-t">资产结构</div>
@@ -1306,6 +1315,7 @@ function fmtQtyShort(n){ const x=+n||0; if(!isFinite(x)) return '--'; if(Math.ab
 function unitOf(p){ return p&&p.type==='fund'?'份':(p&&p.type==='crypto'?'个':'股'); }
 function buildBookEvents(){
   const ev=[];
+  const trail=balanceTrail();
   (S.positions||[]).forEach(p=>{
     ensureTrades(p);
     const tr=p.trades.slice().sort((a,b)=>String(a.date).localeCompare(String(b.date))||((a.ts||0)-(b.ts||0)));
@@ -1319,16 +1329,26 @@ function buildBookEvents(){
         ev.push({date,sort:t.ts||0,filter:'sell',tag:clears?'清仓':'减仓',tagCls:'sell',dot:'sell',
           title:(clears?'清仓 ':'减仓 ')+(p.name||p.symbol||'')+' '+fmtQtyShort(q)+unitOf(p),
           sub:'@ '+fmt(price,4)+(fee?(' · 费 '+fmt(fee)):'')+(t.note?(' · '+t.note):''),
-          amount:toCNY(q*price-fee,p.currency),tone:'cash'});
+          amount:toCNY(q*price-fee,p.currency),tone:'cash',bals:trail['tr:'+p.id+':'+t.id]});
       }else{
         qty+=q;
         const isDca=String(t.note||'').indexOf('定投')>=0, isBase=t.side==='base';
         ev.push({date,sort:t.ts||(isBase?1:0),filter:isDca?'dca':'buy',tag:isDca?'定投':(isBase?'建仓':'加仓'),tagCls:isDca?'dca':'buy',dot:isDca?'dca':'buy',
           title:(isDca?'定投 ':(isBase?'建仓 ':'加仓 '))+(p.name||p.symbol||'')+' '+fmtQtyShort(q)+unitOf(p),
           sub:'@ '+fmt(price,4)+(fee?(' · 费 '+fmt(fee)):'')+(t.note&&!isDca?(' · '+t.note):''),
-          amount:-toCNY(q*price+fee,p.currency),tone:'cash'});
+          amount:-toCNY(q*price+fee,p.currency),tone:'cash',bals:trail['tr:'+p.id+':'+t.id]});
       }
     });
+  });
+  (S.ledger||[]).forEach(t=>{
+    if(!t||!t.date||(t.type!=='income'&&t.type!=='expense')) return;
+    const rows=trail['led:'+t.id];
+    if(!rows||!rows.length) return;
+    const acc=S.accounts.find(a=>a.id===t.accId);
+    ev.push({date:t.date,sort:t.createdAt||0,filter:t.type==='income'?'income':'expense',
+      tag:t.type==='income'?'收入':'支出',tagCls:t.type==='income'?'buy':'sell',dot:t.type==='income'?'buy':'sell',
+      title:t.note||(t.type==='income'?'收入':'支出'),sub:acc?acc.name:'',
+      amount:t.type==='income'?(+t.amount||0):-(+t.amount||0),tone:'pnl',bals:rows});
   });
   (S.history||[]).forEach(h=>{
     if(!h||!h.date) return;
@@ -1348,7 +1368,8 @@ function buildBookEvents(){
       title=t.dir==='in'?(other+' → 投资账户'):('投资账户 → '+other);
       amount=+t.amount||0;
     }else return;
-    ev.push({date:t.date,sort:t.ts||0,filter:'xfer',tag:'转账',tagCls:'xfer',dot:'xfer',title,sub,amount,tone:'mute'});
+    ev.push({date:t.date,sort:t.ts||0,filter:'xfer',tag:'转账',tagCls:'xfer',dot:'xfer',title,sub,amount,tone:'mute',
+      bals:t.fromId&&t.toId?[].concat(trail['xfer:'+t.id+':from']||[], trail['xfer:'+t.id+':to']||[]):null});
   });
   fxAccounts().forEach(a=>{
     const fx=a.fx||{};
@@ -1363,7 +1384,7 @@ function buildBookEvents(){
       const other=f.otherId?accNameById(f.otherId):'';
       const title=usd>=0?(other?other+' → '+a.name:a.name+' 入金'):(other?a.name+' → '+other:a.name+' 出金');
       ev.push({date:f.date, sort:f.id?1:0, filter:'xfer', tag:'转账', tagCls:'xfer', dot:'xfer', title,
-        sub:(f.note||'外汇资金')+' · $'+fmt(Math.abs(usd)), amount:cny, tone:'mute'});
+        sub:(f.note||'外汇资金')+' · $'+fmt(Math.abs(usd)), amount:cny, tone:'mute', bals:trail['fxf:'+f.id]});
     });
   });
   return ev;
@@ -1390,7 +1411,7 @@ function renderBook(){
     const amt=e.tone==='mute'
       ? `<div class="ev-amt mute">¥${fmt(Math.abs(e.amount))}</div>`
       : `<div class="ev-amt ${e.amount>=0?'up':'down'}">${fmtSignedYuan(e.amount)}</div>`;
-    html+=`<div class="ev"><span class="ev-dot ${e.dot}"></span><div class="ev-bd"><div class="ev-tt"><span>${esc(e.title)}</span><span class="tag ${e.tagCls}">${esc(e.tag)}</span></div><div class="item-meta">${esc(e.sub||'')}</div></div>${amt}</div>`;
+    html+=`<div class="ev"><span class="ev-dot ${e.dot}"></span><div class="ev-bd"><div class="ev-tt"><span>${esc(e.title)}</span><span class="tag ${e.tagCls}">${esc(e.tag)}</span></div><div class="item-meta">${esc(e.sub||'')}</div>${balNoteHtml(e.bals)}</div>${amt}</div>`;
   });
   el.innerHTML=html;
 }
@@ -2211,6 +2232,146 @@ function renderRates(){
 document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible'){ autoDailyClose(); syncFx(); refreshQuotes(false); } });
 setInterval(()=>autoDailyClose(),10*60e3);
 
+function lastDayOf(ym){
+  const p=String(ym||'').split('-');
+  const y=+p[0]||0, m=+p[1]||1;
+  return ym+'-'+String(new Date(y,m,0).getDate()).padStart(2,'0');
+}
+function accountDeltaList(){
+  const ev=[];
+  (S.ledger||[]).forEach(t=>{
+    if(!t||!t.accId||!t.date) return;
+    const acc=S.accounts.find(a=>a.id===t.accId);
+    if(!acc||isInvestAcc(acc)||isFxAcc(acc)) return;
+    if(t.type==='expense') ev.push({key:'led:'+t.id, accId:t.accId, date:t.date, ts:t.createdAt||0, delta:-(+t.amount||0)});
+    else if(t.type==='income') ev.push({key:'led:'+t.id, accId:t.accId, date:t.date, ts:t.createdAt||0, delta:+(+t.amount||0)});
+  });
+  (S.transfers||[]).forEach(t=>{
+    if(!t||!t.date||!t.fromId||!t.toId) return;
+    ev.push({key:'xfer:'+t.id+':from', accId:t.fromId, date:t.date, ts:t.ts||0, delta:-(+t.amount||0)});
+    ev.push({key:'xfer:'+t.id+':to', accId:t.toId, date:t.date, ts:t.ts||0, delta:+(t.amountIn!=null?+t.amountIn:+t.amount||0)});
+  });
+  (S.positions||[]).forEach(p=>{
+    (p.trades||[]).forEach(t=>{
+      if(!t||!t.settled||t.cashDelta==null||!t.date) return;
+      const id=t.cashAccId||p.accId; if(!id) return;
+      ev.push({key:'tr:'+p.id+':'+t.id, accId:id, date:t.date, ts:t.ts||0, delta:+t.cashDelta});
+    });
+  });
+  (S.accounts||[]).forEach(a=>{
+    ((a.fx&&a.fx.flows)||[]).forEach(f=>{
+      if(!f||!f.applied||!f.otherId||!f.date) return;
+      ev.push({key:'fxf:'+f.id, accId:f.otherId, date:f.date, ts:0, delta:+f.appliedDelta||0});
+    });
+  });
+  ev.sort((a,b)=>String(a.date).localeCompare(String(b.date))||(a.ts||0)-(b.ts||0));
+  return ev;
+}
+function balanceTrail(){
+  const events=accountDeltaList();
+  const sum={};
+  events.forEach(e=>{ sum[e.accId]=(sum[e.accId]||0)+e.delta; });
+  const run={};
+  (S.accounts||[]).forEach(a=>{
+    const cur=isInvestAcc(a)?idleCash(a):(+a.balance||0);
+    run[a.id]=cur-(sum[a.id]||0);
+  });
+  const map={};
+  events.forEach(e=>{
+    const before=run[e.accId]||0;
+    const after=before+e.delta;
+    run[e.accId]=after;
+    (map[e.key]=map[e.key]||[]).push({accId:e.accId, before, after});
+  });
+  return map;
+}
+function balNoteHtml(rows){
+  if(!rows||!rows.length) return '';
+  return rows.map(r=>{
+    const a=S.accounts.find(x=>x.id===r.accId);
+    const cur=accCurrency(a);
+    const who=rows.length>1&&a?esc(a.name)+' ':'';
+    return `<div class="balnote">${who}原金额 ${money(r.before,cur)}</div><div class="balnote">${who}余额 ${money(r.after,cur)}</div>`;
+  }).join('');
+}
+function balToastText(rows){
+  return (rows||[]).map(r=>{
+    const a=S.accounts.find(x=>x.id===r.accId);
+    const cur=accCurrency(a);
+    const who=(rows.length>1&&a)?a.name+' ':'';
+    return who+'原金额 '+money(r.before,cur)+' 余额 '+money(r.after,cur);
+  }).join('\n');
+}
+function balancesAsOf(date){
+  const later={};
+  accountDeltaList().forEach(e=>{ if(e.date>date) later[e.accId]=(later[e.accId]||0)+e.delta; });
+  const m={};
+  (S.accounts||[]).forEach(a=>{
+    if(isFxAcc(a)) return;
+    const cur=isInvestAcc(a)?idleCash(a):(+a.balance||0);
+    m[a.id]=cur-(later[a.id]||0);
+  });
+  return m;
+}
+function cnyBalances(map){
+  let s=0;
+  (S.accounts||[]).forEach(a=>{ if(map[a.id]==null) return; s+=toCNY(map[a.id], accCurrency(a)); });
+  return s;
+}
+function captureAssetMonths(){
+  S.assetMonths=Array.isArray(S.assetMonths)?S.assetMonths:[];
+  const ym=today().slice(0,7);
+  let changed=false;
+  S.assetMonths.forEach(m=>{ if(m&&m.ym<ym&&!m.frozen){ m.frozen=true; m.label=''; changed=true; } });
+  const have={}; S.assetMonths.forEach(m=>{ if(m&&m.ym) have[m.ym]=1; });
+  const lastHist={};
+  (S.history||[]).forEach(h=>{
+    if(!h||!h.date) return;
+    const k=h.date.slice(0,7);
+    if(!lastHist[k]||h.date>lastHist[k].date) lastHist[k]={date:h.date, value:+h.totalValue||0};
+  });
+  Object.keys(lastHist).sort().forEach(k=>{
+    if(k>=ym||have[k]) return;
+    const asOf=lastHist[k].date;
+    const assets=roundMoney(cnyBalances(balancesAsOf(asOf))+lastHist[k].value);
+    S.assetMonths.push({ym:k, asOf, assets, frozen:true, source:'history'});
+    changed=true;
+  });
+  const live=roundMoney(assetTotals().assets);
+  const cur=S.assetMonths.find(m=>m&&m.ym===ym);
+  if(!cur){ S.assetMonths.push({ym, asOf:today(), assets:live, frozen:false, source:'live'}); changed=true; }
+  else if(cur.asOf!==today()||Math.abs((+cur.assets||0)-live)>0.009||cur.frozen){
+    cur.asOf=today(); cur.assets=live; cur.frozen=false; cur.source='live'; changed=true;
+  }
+  S.assetMonths.sort((a,b)=>String(a.ym).localeCompare(String(b.ym)));
+  if(changed) save();
+}
+function renderMonthAssets(){
+  const sc=document.getElementById('monthScroll'); if(!sc) return;
+  captureAssetMonths();
+  const rows=(S.assetMonths||[]).slice();
+  const sub=document.getElementById('monthAssetSub');
+  if(sub) sub.textContent=rows.length?rows.length+' 个月':'总资产';
+  if(!rows.length){ sc.innerHTML='<div class="empty">还没有月末资产</div>'; return; }
+  const max=Math.max.apply(null, rows.map(r=>Math.abs(+r.assets||0)).concat([1]));
+  sc.innerHTML=rows.map((r,i)=>{
+    const prev=i?rows[i-1]:null;
+    const h=Math.max(4, Math.round((Math.abs(+r.assets||0)/max)*96));
+    let chg='<div class="chg" style="color:var(--muted)">—</div>';
+    if(prev&&isFinite(+prev.assets)){
+      const d=(+r.assets||0)-(+prev.assets||0);
+      const pct=Math.abs(+prev.assets)>0.009?d/Math.abs(+prev.assets)*100:null;
+      const cls=d>0?'up':(d<0?'down':'');
+      const sign=d>0?'+':(d<0?'-':'');
+      chg=`<div class="chg ${cls}">${sign}¥${fmt(Math.abs(d))}</div>`+(pct==null?'':`<div class="chg ${cls}">${sign}${fmt(Math.abs(pct),1)}%</div>`);
+    }
+    const label=r.frozen?r.ym:'本月至今';
+    const asOf=r.frozen?(r.asOf||lastDayOf(r.ym)):r.asOf;
+    return `<div class="mcol"><div class="mbar" style="height:${h}px"></div><div class="ym">${esc(label)}</div><div class="tagline">${esc(asOf||'')}</div><div class="v">¥${fmt(r.assets)}</div>${chg}</div>`;
+  }).join('');
+  requestAnimationFrame(()=>{ sc.scrollLeft=sc.scrollWidth; });
+}
+
 // ===== Render =====
 function renderAll(){
   const inv=investValue(), debt=debtValue();
@@ -2267,18 +2428,7 @@ function renderAll(){
   if(!items.length) box.innerHTML='<div class="empty">刷新行情后显示</div>';
   else box.innerHTML=items.map(it=>`<div class="item"><div class="item-top"><div class="item-name">${esc(it.name)}</div><div class="item-pnl ${it.day>=0?'up':'down'}">${fmtP(it.day)}</div></div></div>`).join('');
 
-  // nav chart
-  const labels=S.history.slice(-30).map(h=>h.date.slice(5));
-  const data=S.history.slice(-30).map(h=>h.totalValue);
-  const ctx=document.getElementById('navChart');
-  if(ctx && window.Chart){
-    if(navChart) navChart.destroy();
-    navChart=new Chart(ctx,{
-      type:'line',
-      data:{labels,datasets:[{data,borderColor:cssVar('--accent'),backgroundColor:'rgba(108,77,255,.16)',fill:true,tension:.35,pointRadius:0,borderWidth:2}]},
-      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{border:{display:false},grid:{color:cssVar('--sep')},ticks:{color:cssVar('--muted'),font:{size:10}}},x:{border:{display:false},ticks:{color:cssVar('--muted'),font:{size:10}},grid:{display:false}}}}
-    });
-  }
+  renderMonthAssets();
 
   renderAccounts();
   renderInvest();
@@ -2474,12 +2624,13 @@ function renderLedger(){
   const el=document.getElementById('ledList');
   const list=[...S.ledger].slice(0,30);
   if(!list.length){ el.innerHTML='<div class="empty">暂无记账</div>'; return; }
+  const trail=balanceTrail();
   el.innerHTML=list.map(t=>{
     const acc=S.accounts.find(a=>a.id===t.accId);
     const sign=t.type==='income'?'+':'-';
     const col=t.type==='income'?'var(--success)':(t.type==='expense'?'var(--danger)':'var(--muted)');
     return `<div class="item"><div class="item-top">
-      <div><div class="item-name">${esc(t.note||t.type)}</div><div class="item-meta">${t.date} · ${esc(acc?acc.name:'')}</div></div>
+      <div><div class="item-name">${esc(t.note||t.type)}</div><div class="item-meta">${t.date} · ${esc(acc?acc.name:'')}</div>${balNoteHtml(trail['led:'+t.id])}</div>
       <div class="item-v" style="color:${col}">${sign}¥${fmt(+t.amount||0)}</div>
     </div></div>`;
   }).join('');
@@ -2670,7 +2821,11 @@ function saveTransfer(){
   applyBal(to, recv);
   S.transfers=S.transfers||[];
   S.transfers.push({id:uid(),fromId,toId,amount:roundMoney(amt),amountIn:recv,fromCur:fc,toCur:tc,date,note,ts:Date.now()});
-  save(); closeM('xferModal'); renderAll(); toast('已转账');
+  const xfer=S.transfers[S.transfers.length-1];
+  save(); closeM('xferModal'); renderAll();
+  const rows=[].concat((balanceTrail()['xfer:'+xfer.id+':from'])||[], (balanceTrail()['xfer:'+xfer.id+':to'])||[]);
+  const balLine=balToastText(rows);
+  toast(balLine?('已转账\n'+balLine):'已转账');
 }
 function xferLine(t){
   if(t.fromId&&t.toId){
@@ -2903,7 +3058,8 @@ function saveTrade(){ const d=tradeDraft(); if(!d) return; const {p,t}=d;
   const left=settleTradeCash(p, t);
   save(); closeM('tradeModal'); renderAll();
   const warn=left!=null&&left<-0.005?('，闲钱已为负 '+money(left, accCurrency(resolvedInvestAcc(p)))):'';
-  toast((t.side==='sell'?((+p.qty||0)<=1e-10?'已清仓，卖出回到闲钱':'已减仓，卖出回到闲钱'):'已加仓 · 均价 '+fmt(p.cost,4))+warn); }
+  const note=balToastText((balanceTrail()['tr:'+p.id+':'+t.id])||[]);
+  toast((t.side==='sell'?((+p.qty||0)<=1e-10?'已清仓，卖出回到闲钱':'已减仓，卖出回到闲钱'):'已加仓 · 均价 '+fmt(p.cost,4))+warn+(note?'\n'+note:'')); }
 function delTrade(pid,tid){ const p=S.positions.find(x=>x.id===pid); if(!p||!confirm('删除这笔记录？'))return;
   const t=(p.trades||[]).find(x=>x.id===tid&&x.side!=='base');
   if(t) reverseTradeCash(p, t);
@@ -2982,10 +3138,12 @@ function saveLedger(e){
     if(type==='expense') acc.balance=(+acc.balance||0)-amount;
     else if(type==='income') acc.balance=(+acc.balance||0)+amount;
   }
-  S.ledger.unshift({id:uid(),type,amount,accId,note,date,createdAt:Date.now()});
+  const id=uid();
+  S.ledger.unshift({id,type,amount,accId,note,date,createdAt:Date.now()});
   save(); renderAll();
   document.getElementById('ledAmt').value=''; document.getElementById('ledNote').value='';
-  toast('已记账');
+  const balLine=balToastText((balanceTrail()['led:'+id])||[]);
+  toast(balLine?('已记账\n'+balLine):'已记账');
 }
 
 function exportAll(){
@@ -3000,7 +3158,7 @@ function importAll(ev){
   r.readAsText(f); ev.target.value='';
 }
 function clearAll(){ if(!confirm('确定清空全部数据？'))return;
-  S={accounts:[],ledger:[],positions:[],history:[],transfers:[],dca:[],debts:[],goalTarget:null,rates:S.rates,lastRefresh:null}; save(); renderAll(); toast('已清空'); }
+  S={accounts:[],ledger:[],positions:[],history:[],transfers:[],dca:[],debts:[],assetMonths:[],goalTarget:null,rates:S.rates,lastRefresh:null}; save(); renderAll(); toast('已清空'); }
 
 // ===== 快捷记账 =====
 // sync.js 调用：把条目并入账本（按 qid 去重），返回新增记录
@@ -3035,7 +3193,8 @@ function handleUrlAdd(){
   if(!added.length) return;
   save();
   if(localStorage.getItem('am_sync_token')) AMQuick.addPending(localStorage,[e]);
-  setTimeout(()=>toast(`已记账 ${e.type==='income'?'+':''}¥${fmt(e.amount)}${e.category?' · '+e.category:''}`),300);
+  const note=balToastText((balanceTrail()['led:'+added[0].id])||[]);
+  setTimeout(()=>toast(`已记账 ${e.type==='income'?'+':''}¥${fmt(e.amount)}${e.category?' · '+e.category:''}`+(note?'\n'+note:'')),300);
 }
 
 const MAIN_TABS=['home','invest','ledger','calendar','mine'];
@@ -3062,7 +3221,7 @@ function switchTab(name){
   const tt=document.getElementById('topTitle'); if(tt) tt.textContent=titles[name]||'今日';
   if(name==='calendar') renderCal();
   if(name==='mine'&&mineSub==='record'){ fillSelects(); const ld=document.getElementById('ledDate'); if(ld) ld.value=ld.value||today(); }
-  if(name==='home'&&navChart){ try{ navChart.resize(); }catch(e){} }
+  if(name==='home'){ const sc=document.getElementById('monthScroll'); if(sc) sc.scrollLeft=sc.scrollWidth; }
 }
 document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>switchTab(t.dataset.t)));
 
