@@ -202,6 +202,18 @@
     .cal-d.sel{box-shadow:inset 0 0 0 1.5px var(--accent)}
     .cal-d.mute{opacity:.35}
     #p-calendar .card{padding-bottom:12px}
+    .spend-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:3px;text-align:center}
+    .spend-h{font-size:12px;color:var(--muted);padding:4px 0}
+    .spend-d{min-width:0;min-height:46px;padding:3px 1px 4px;border-radius:10px;cursor:pointer;display:flex;flex-direction:column;align-items:center}
+    .spend-d .dn{font-size:13px;font-weight:700;line-height:1.2}
+    .spend-d .ex,.spend-d .in{font-size:12px;font-weight:700;line-height:1.15;white-space:nowrap;font-variant-numeric:tabular-nums}
+    .spend-d .ex{color:var(--danger)}
+    .spend-d .in{color:var(--success)}
+    .spend-d.today{box-shadow:inset 0 0 0 1.5px var(--accent)}
+    .spend-d.sel{background:var(--accent-soft)}
+    .spend-d.pad{visibility:hidden;pointer-events:none}
+    .spend-nav{display:flex;align-items:center;justify-content:space-between;gap:8px}
+    .spend-nav b{font-size:16px;font-weight:750;white-space:nowrap}
     .modal-ov{position:fixed;inset:0;background:rgba(22,14,48,.46);display:flex;align-items:flex-end;justify-content:center;z-index:100;opacity:0;pointer-events:none;transition:opacity .3s}
     .modal-ov.show{opacity:1;pointer-events:auto}
     .modal{background:var(--card);width:100%;max-width:480px;border-radius:22px 22px 0 0;padding:8px 16px calc(20px + var(--sb));max-height:92vh;overflow-y:auto;transform:translateY(100%);transition:transform .4s var(--ease)}
@@ -395,6 +407,7 @@
   </div>
 
   <div id="p-ledger" style="display:none">
+    <div class="card" id="spendCardLedger"></div>
     <div class="pills" id="bookPills">
       <button type="button" class="pill on" data-f="all" onclick="setBookFilter('all')">全部</button>
       <button type="button" class="pill" data-f="buy" onclick="setBookFilter('buy')">买入</button>
@@ -468,6 +481,7 @@
         <div class="card-t">本月收支汇总</div>
         <div id="monthStats2"></div>
       </div>
+      <div class="card" id="spendCardRecord"></div>
       <div class="card">
         <div class="card-t">记一笔</div>
         <form onsubmit="saveLedger(event)">
@@ -480,6 +494,9 @@
           <div class="form-g"><label>账户</label><select class="form-c" id="ledAcc" required></select></div>
           <div class="form-g"><label>分类 / 备注</label><input class="form-c" id="ledNote" placeholder="餐饮 / 工资 / 买入股票 等"></div>
           <div class="form-g"><label>日期</label><input class="form-c" id="ledDate" type="date"></div>
+          <button type="button" class="btn btn-o" id="ocrBtn" style="width:100%;margin-bottom:8px">📷 识别截图</button>
+          <input id="ocrFile" type="file" accept="image/*" hidden>
+          <p class="hint" id="ocrHint">识别在本机完成，不会上传。首次会下载中文字库，只需一次。识别后请核对再保存。</p>
           <button type="submit" class="btn btn-p">保存</button>
         </form>
       </div>
@@ -2527,6 +2544,7 @@ function renderAll(){
   renderAlloc();
   renderGoal();
   renderBook();
+  renderSpendCal();
 }
 
 function renderAccounts(){
@@ -2707,6 +2725,89 @@ function renderDebts(){
     </div>`).join('');
 }
 
+let spendY=null, spendM=null, spendSel='';
+function compactAmt(n){
+  const x=Math.abs(+n||0);
+  const t=v=>String(Math.round(v*10)/10).replace(/\.0$/,'');
+  if(x>=1e8) return t(x/1e8)+'亿';
+  if(x>=1e4) return t(x/1e4)+'万';
+  if(x>=1000) return t(x/1000)+'k';
+  if(Math.abs(x-Math.round(x))<0.001) return String(Math.round(x));
+  return t(x);
+}
+function daySpend(ds){
+  let exp=0, inc=0; const items=[];
+  (S.ledger||[]).forEach(t=>{
+    if(!t||t.date!==ds) return;
+    if(t.type==='expense'){ exp+=+t.amount||0; items.push(t); }
+    else if(t.type==='income'){ inc+=+t.amount||0; items.push(t); }
+  });
+  items.sort((a,b)=>(a.createdAt||0)-(b.createdAt||0));
+  return {exp,inc,items};
+}
+function spendNav(d){
+  if(spendY==null){ const n=new Date(); spendY=n.getFullYear(); spendM=n.getMonth(); }
+  spendM+=d;
+  if(spendM>11){ spendM=0; spendY++; }
+  if(spendM<0){ spendM=11; spendY--; }
+  const prefix=`${spendY}-${String(spendM+1).padStart(2,'0')}`;
+  if(spendSel && !String(spendSel).startsWith(prefix)) spendSel='';
+  renderSpendCal();
+}
+function spendPick(ds){ spendSel=ds; renderSpendCal(); }
+function hookSpendSwipe(id){
+  const el=document.getElementById(id);
+  if(!el||el.dataset.swipe) return;
+  el.dataset.swipe='1';
+  let x=0,y=0,moved=false;
+  el.addEventListener('pointerdown',e=>{ x=e.clientX; y=e.clientY; moved=false; });
+  el.addEventListener('pointerup',e=>{
+    const dx=e.clientX-x, dy=e.clientY-y;
+    if(Math.abs(dx)>48 && Math.abs(dx)>Math.abs(dy)*1.2){ moved=true; spendNav(dx<0?1:-1); }
+  });
+  el.addEventListener('click',e=>{ if(moved){ e.stopPropagation(); e.preventDefault(); moved=false; } }, true);
+}
+function renderSpendCal(){
+  if(spendY==null){ const n=new Date(); spendY=n.getFullYear(); spendM=n.getMonth(); }
+  const prefix=`${spendY}-${String(spendM+1).padStart(2,'0')}`;
+  const first=new Date(spendY,spendM,1).getDay();
+  const days=new Date(spendY,spendM+1,0).getDate();
+  const td=today();
+  let mExp=0, mInc=0;
+  (S.ledger||[]).forEach(t=>{
+    if(!t||!t.date||!String(t.date).startsWith(prefix)) return;
+    if(t.type==='expense') mExp+=+t.amount||0;
+    else if(t.type==='income') mInc+=+t.amount||0;
+  });
+  let cells='';
+  for(let i=0;i<first;i++) cells+='<div class="spend-d pad"></div>';
+  for(let d=1;d<=days;d++){
+    const ds=`${prefix}-${String(d).padStart(2,'0')}`;
+    const s=daySpend(ds);
+    let cls='spend-d';
+    if(ds===td) cls+=' today';
+    if(ds===spendSel) cls+=' sel';
+    const ex=s.exp>0?`<div class="ex">${compactAmt(s.exp)}</div>`:'';
+    const inc=s.inc>0?`<div class="in">${compactAmt(s.inc)}</div>`:'';
+    cells+=`<div class="${cls}" onclick="spendPick('${ds}')"><div class="dn">${d}</div>${ex}${inc}</div>`;
+  }
+  const head=['日','一','二','三','四','五','六'].map(x=>`<div class="spend-h">${x}</div>`).join('');
+  const sum=`<div class="money-pair" style="margin:4px 0 8px"><div><div class="l">本月支出</div><div class="v" style="color:var(--danger)">¥${fmt(mExp)}</div></div><div><div class="l">本月收入</div><div class="v" style="color:var(--success)">¥${fmt(mInc)}</div></div></div>`;
+  let detailTitle='点某一天查看当天记账', detail='<div class="empty">点日期查看这一天的收入和支出</div>';
+  if(spendSel){
+    const s=daySpend(spendSel);
+    detailTitle=spendSel;
+    detail=s.items.length?s.items.map(t=>{
+      const acc=S.accounts.find(a=>a.id===t.accId);
+      const sign=t.type==='income'?'+':'-';
+      const col=t.type==='income'?'var(--success)':'var(--danger)';
+      return `<div class="item"><div class="item-top"><div><div class="item-name">${esc(t.note||(t.type==='income'?'收入':'支出'))}</div><div class="item-meta">${esc(acc?acc.name:'')}</div></div><div class="item-v" style="color:${col}">${sign}¥${fmt(+t.amount||0)}</div></div></div>`;
+    }).join(''):'<div class="empty">这天没有收支</div>';
+  }
+  const html=`<div class="spend-nav"><button type="button" class="btn-sm" onclick="spendNav(-1)" aria-label="上个月">‹</button><b>${spendY}年${spendM+1}月</b><button type="button" class="btn-sm" onclick="spendNav(1)" aria-label="下个月">›</button></div>${sum}<div class="spend-grid">${head}</div><div class="spend-grid" style="margin-top:2px">${cells}</div><div class="card-t" style="margin-top:8px">${esc(detailTitle)}</div>${detail}`;
+  ['spendCardLedger','spendCardRecord'].forEach(id=>{ const el=document.getElementById(id); if(el) el.innerHTML=html; });
+  hookSpendSwipe('spendCardLedger'); hookSpendSwipe('spendCardRecord');
+}
 function renderLedger(){
   const el=document.getElementById('ledList');
   const list=[...S.ledger].slice(0,30);
@@ -3316,6 +3417,14 @@ load();
 handleUrlAdd();
 document.getElementById('ledDate').value=today();
 renderAll();
+if(window.AMQuick) AMQuick.bindPayOcr({button:'ocrBtn', file:'ocrFile', hint:'ocrHint', apply:function(r){
+  if(r.amount) document.getElementById('ledAmt').value=r.amount;
+  if(r.type==='income'||r.type==='expense') document.getElementById('ledType').value=r.type;
+  const note=[r.category&&r.category!=='其他'&&r.category!=='其他收入'?r.category:'', r.merchant||''].filter(Boolean).join(' · ');
+  if(note) document.getElementById('ledNote').value=note.slice(0,80);
+  if(r.date) document.getElementById('ledDate').value=r.date;
+  if(r.account){ const acc=AMQuick.matchAccount(S, r.account); const sel=document.getElementById('ledAcc'); if(acc&&sel) sel.value=acc.id; }
+}});
 if(location.hash==='#settings') switchTab('settings');
 fetchRates().then(()=>{ save(); renderRates(); });
 renderAutoU(); setTimeout(()=>autoDailyClose(),2500); setTimeout(()=>syncFx(),800); setTimeout(()=>refreshQuotes(false),500);

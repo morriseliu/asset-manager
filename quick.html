@@ -66,6 +66,10 @@
     .note svg.i{width:18px;height:18px;color:var(--muted)}
     .note input{flex:1;min-width:0;border:none;background:none;font:inherit;font-size:16px;color:var(--text);outline:none;-webkit-user-select:text;user-select:text}
     .note input::placeholder{color:var(--muted)}
+    .ocr{margin-top:10px;height:46px;width:100%;border-radius:14px;background:var(--accent);color:var(--on-accent);font-size:16px;font-weight:700}
+    .ocr:disabled{opacity:.55}
+    .ocr-msg{margin-top:6px;min-height:18px;font-size:13px;font-weight:650;color:var(--accent);line-height:1.4}
+    .cat.suggest{box-shadow:inset 0 0 0 2px var(--accent)}
 
     /* 分类 */
     .cats-h{display:flex;justify-content:space-between;align-items:center;margin:14px 2px 6px;font-size:12.5px;color:var(--muted);font-weight:500}
@@ -139,6 +143,9 @@
     <div class="amt-l"><span id="dLab">今天</span><span>·</span><span class="acc" id="accLab">默认账户</span></div>
     <div class="amt-v" id="amtV" aria-live="polite"><span class="cur" id="sign">¥</span><span class="n ph" id="amtN">0</span><span class="caret"></span></div>
     <label class="note"><svg class="i" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16v4Z M13.5 6.5l4 4"/></svg><input id="note" type="text" maxlength="40" placeholder="备注（可不填）" enterkeyhint="done" autocomplete="off"></label>
+    <button type="button" class="ocr" id="ocrBtn">📷 识别截图</button>
+    <input id="ocrFile" type="file" accept="image/*" hidden>
+    <div class="ocr-msg" id="ocrHint">识别在本机完成，不会上传。首次会下载中文字库，只需一次。</div>
   </div>
 
   <div id="tip" class="tip hide"></div>
@@ -191,6 +198,7 @@ var ICONS={
   '其他收入':['#8b5cf6','M12 3.5a8.5 8.5 0 1 1 0 17 8.5 8.5 0 0 1 0-17Z M12 8.5v7 M8.5 12h7']
 };
 var st={type:'expense', amt:'', busy:false};
+var ocrAcc='', ocrDate='';
 var last=null, undoTimer=null, tick=null;
 var $=function(id){return document.getElementById(id);};
 
@@ -317,7 +325,7 @@ function save(cat){
   var a=amount();
   if(!(a>0)){ bump(); vib(); return; }
   if(st.busy) return; st.busy=true;
-  var e={qid:Q.newId(),amount:a,type:st.type,category:cat,note:$('note').value.trim(),account:'',date:Q.todayStr()};
+  var e={qid:Q.newId(),amount:a,type:st.type,category:cat,note:$('note').value.trim(),account:ocrAcc,date:ocrDate||Q.todayStr()};
   var synced=!!token();
   if(synced){
     // 已开启同步：写入待上传队列 → 上传到 Gist 收件箱；同时记入 pending，主页面同步时也会并入（按 qid 去重）
@@ -379,7 +387,10 @@ function reset(){
   $('done').classList.remove('show');
   document.querySelectorAll('.cat.hit').forEach(function(b){b.classList.remove('hit');});
   $('dAmt').style.textDecoration=''; $('dAmt').style.opacity='';
-  st.amt=''; $('note').value=''; st.busy=false; renderAmt(); accLabel(); renderTip(); renderPend();
+  st.amt=''; $('note').value=''; ocrAcc=''; ocrDate=''; st.busy=false;
+  $('catsH').textContent='点分类即保存';
+  $('ocrHint').textContent='识别在本机完成，不会上传。首次会下载中文字库，只需一次。';
+  renderAmt(); accLabel(); renderTip(); renderPend();
 }
 
 // ---------- 事件 ----------
@@ -406,6 +417,15 @@ document.addEventListener('visibilitychange',function(){ if(document.visibilityS
   if(isFinite(pa)&&pa>0){ st.amt=String(Math.round(Math.abs(pa)*100)/100); }
   if(q.get('note')) $('note').value=q.get('note').slice(0,40);
   renderAmt(); accLabel(); renderTip(); renderPend();
+  Q.bindPayOcr({button:'ocrBtn', file:'ocrFile', hint:'ocrHint', apply:function(r){
+    if(r.type) setType(r.type);
+    if(r.amount){ st.amt=(Math.round(r.amount*100)/100).toFixed(2); renderAmt(); }
+    if(r.merchant) $('note').value=String(r.merchant).slice(0,40);
+    ocrAcc=r.account||''; ocrDate=r.date||'';
+    if(ocrAcc){ var hit=Q.matchAccount(loadS(), ocrAcc); if(hit) $('accLab').textContent=hit.name; else { var fb=Q.pickAccount(loadS(), ''); $('accLab').textContent='建议 '+ocrAcc+(fb?(' · 将记入'+fb.name):''); ocrAcc=''; } }
+    if(ocrDate) $('dLab').textContent=ocrDate;
+    if(r.category){ var b=document.querySelector('.cat[data-c="'+r.category+'"]'); if(b) b.classList.add('suggest'); }
+  }});
   flush();
   if('serviceWorker' in navigator) window.addEventListener('load',function(){ navigator.serviceWorker.register('sw.js').catch(function(){}); });
 })();
