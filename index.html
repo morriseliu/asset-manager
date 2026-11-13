@@ -407,7 +407,6 @@
   </div>
 
   <div id="p-ledger" style="display:none">
-    <div class="card" id="spendCardLedger"></div>
     <div class="pills" id="bookPills">
       <button type="button" class="pill on" data-f="all" onclick="setBookFilter('all')">全部</button>
       <button type="button" class="pill" data-f="buy" onclick="setBookFilter('buy')">买入</button>
@@ -494,9 +493,6 @@
           <div class="form-g"><label>账户</label><select class="form-c" id="ledAcc" required></select></div>
           <div class="form-g"><label>分类 / 备注</label><input class="form-c" id="ledNote" placeholder="餐饮 / 工资 / 买入股票 等"></div>
           <div class="form-g"><label>日期</label><input class="form-c" id="ledDate" type="date"></div>
-          <button type="button" class="btn btn-o" id="ocrBtn" style="width:100%;margin-bottom:8px">📷 识别截图</button>
-          <input id="ocrFile" type="file" accept="image/*" hidden>
-          <p class="hint" id="ocrHint">识别在本机完成，不会上传。首次会下载中文字库，只需一次。识别后请核对再保存。</p>
           <button type="submit" class="btn btn-p">保存</button>
         </form>
       </div>
@@ -2805,8 +2801,9 @@ function renderSpendCal(){
     }).join(''):'<div class="empty">这天没有收支</div>';
   }
   const html=`<div class="spend-nav"><button type="button" class="btn-sm" onclick="spendNav(-1)" aria-label="上个月">‹</button><b>${spendY}年${spendM+1}月</b><button type="button" class="btn-sm" onclick="spendNav(1)" aria-label="下个月">›</button></div>${sum}<div class="spend-grid">${head}</div><div class="spend-grid" style="margin-top:2px">${cells}</div><div class="card-t" style="margin-top:8px">${esc(detailTitle)}</div>${detail}`;
-  ['spendCardLedger','spendCardRecord'].forEach(id=>{ const el=document.getElementById(id); if(el) el.innerHTML=html; });
-  hookSpendSwipe('spendCardLedger'); hookSpendSwipe('spendCardRecord');
+  const spendRoot=document.getElementById('spendCardRecord');
+  if(spendRoot) spendRoot.innerHTML=html;
+  hookSpendSwipe('spendCardRecord');
 }
 function renderLedger(){
   const el=document.getElementById('ledList');
@@ -3417,14 +3414,6 @@ load();
 handleUrlAdd();
 document.getElementById('ledDate').value=today();
 renderAll();
-if(window.AMQuick) AMQuick.bindPayOcr({button:'ocrBtn', file:'ocrFile', hint:'ocrHint', apply:function(r){
-  if(r.amount) document.getElementById('ledAmt').value=r.amount;
-  if(r.type==='income'||r.type==='expense') document.getElementById('ledType').value=r.type;
-  const note=[r.category&&r.category!=='其他'&&r.category!=='其他收入'?r.category:'', r.merchant||''].filter(Boolean).join(' · ');
-  if(note) document.getElementById('ledNote').value=note.slice(0,80);
-  if(r.date) document.getElementById('ledDate').value=r.date;
-  if(r.account){ const acc=AMQuick.matchAccount(S, r.account); const sel=document.getElementById('ledAcc'); if(acc&&sel) sel.value=acc.id; }
-}});
 if(location.hash==='#settings') switchTab('settings');
 fetchRates().then(()=>{ save(); renderRates(); });
 renderAutoU(); setTimeout(()=>autoDailyClose(),2500); setTimeout(()=>syncFx(),800); setTimeout(()=>refreshQuotes(false),500);

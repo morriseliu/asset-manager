@@ -1,6 +1,6 @@
 // 全能资产管家 service worker: app shell cache-first, price/rate APIs network-only.
 const PREFIX = 'asset-manager-';
-const CACHE = PREFIX + 'v18'; // v18：记一笔识别截图；账本月支出日历
+const CACHE = PREFIX + 'v19'; // v19：去掉截图识别；支出日历只留在记账页
 const CHART_JS = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js';
 const SHELL = [
   './',
@@ -54,19 +54,6 @@ self.addEventListener('fetch', event => {
       return;
     }
     event.respondWith(caches.match(req).then(hit => hit || fetch(req)));
-    return;
-  }
-
-  // 识别引擎和中文字库：用过一次就缓存，之后可离线识别。
-  if ((url.hostname === 'cdn.jsdelivr.net' && /\/tesseract\.js/.test(url.pathname)) || url.hostname === 'tessdata.projectnaptha.com') {
-    event.respondWith((async () => {
-      const cache = await caches.open(CACHE);
-      const hit = await cache.match(req);
-      if (hit) return hit;
-      const res = await fetch(req);
-      if (res.ok) cache.put(req, res.clone());
-      return res;
-    })());
     return;
   }
 
