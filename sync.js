@@ -300,7 +300,7 @@
       '<div class="item" style="' + row + '"><span>手动同步</span><span><button class="btn-sm pri" id="syncUp">上传</button> <button class="btn-sm warn" id="syncDown">下载</button></span></div>' +
       '<div class="item" id="syncRestoreRow" style="' + row + ';display:none"><span id="syncRestoreLab" style="font-size:.8rem">恢复备份</span><button class="btn-sm" id="syncRestore">恢复</button></div>' +
       '<div id="syncStatus" style="font-size:.78rem;margin-top:6px;color:var(--muted)"></div>' +
-      '<div id="syncLast" style="font-size:.7rem;color:#94a3b8;margin-top:2px"></div>';
+      '<div id="syncLast" style="font-size:.75rem;margin-top:2px"></div>';
     page.insertBefore(card, page.firstChild);
     document.getElementById('syncSave').onclick = function () {
       var v = document.getElementById('syncToken').value.trim();
