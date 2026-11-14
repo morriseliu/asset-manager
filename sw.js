@@ -1,6 +1,6 @@
 // 全能资产管家 service worker: app shell cache-first, price/rate APIs network-only.
 const PREFIX = 'asset-manager-';
-const CACHE = PREFIX + 'v20'; // v20：账本式视觉改版（配色、排版、桌面侧栏）
+const CACHE = PREFIX + 'v21'; // v21：在原紫色界面上加层次、数字和宽屏
 const CHART_JS = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js';
 const SHELL = [
   './',
