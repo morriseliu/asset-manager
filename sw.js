@@ -1,6 +1,6 @@
 // 全能资产管家 service worker: app shell cache-first, price/rate APIs network-only.
 const PREFIX = 'asset-manager-';
-const CACHE = PREFIX + 'v21'; // v21：在原紫色界面上加层次、数字和宽屏
+const CACHE = PREFIX + 'v22'; // v22：设置里的 USDT 永续资金费估算
 const CHART_JS = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js';
 const SHELL = [
   './',
@@ -69,5 +69,6 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // Everything else (stock/fund/crypto price APIs, exchange rates): not intercepted -> straight to network, never cached.
+  // Everything else, including Gate public futures GETs on api.gateio.ws, is not intercepted:
+  // the browser sends the request itself and this worker does not cache it.
 });
