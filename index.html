@@ -334,6 +334,9 @@
     .qa-steps li{margin:4px 0}
     details.qa summary{cursor:pointer;color:var(--accent);font-size:15px;font-weight:650;list-style:none;padding:11px 0}
     details.qa summary::-webkit-details-marker{display:none}
+    .gf-inline{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:6px}
+    .gf-inline label{font-size:12.5px;color:var(--muted);font-weight:650;display:flex;align-items:center;gap:6px}
+    .gf-inline .form-c{width:8.8em;padding:6px 8px;font-size:14px}
     a{color:var(--accent)}
     .tab{transition:color .18s var(--ease), transform .18s var(--ease)}
     .tab.active svg.i{filter:drop-shadow(0 3px 6px rgba(10,162,122,.5))}
@@ -584,6 +587,29 @@
     </div>
 
     <div id="p-settings" style="display:none">
+      <div class="card" id="gateCard">
+        <div class="card-t"><span>USDT 永续资金费</span>
+          <span>
+            <button type="button" class="btn-sm" onclick="gfOpenLeg()">记仓位</button>
+            <button type="button" class="btn-sm" onclick="gfOpenFee()">记手续费</button>
+            <button type="button" class="btn-sm pri" id="gfRefreshBtn" onclick="gfRefresh()">刷新估算</button>
+          </span>
+        </div>
+        <p class="hint" style="margin:0 0 4px">只读 Gate 公开的 USDT 永续行情，在这里手工记账。这一版只合计资金费和手填手续费，不含开平仓价差，不是交易盈亏。不写入持仓、账本、外汇，也不计入总资产。</p>
+        <details class="qa">
+          <summary>怎么算、哪些不算</summary>
+          <p class="hint" style="margin:0 0 8px">
+            只估算 USDT 本位永续。不绑定账户，不读取持仓、委托、成交或资金流水，也不保存密钥。<br>
+            名义价值 = 标记价 × 张数 × 合约乘数。做多且费率为正记负数（要付），做空且费率为正记正数（会收）；费率为负则反过来。杠杆只展示，不改变名义。<br>
+            每个结算时点用当时的张数，张数为 0 就跳过。填「币」时按合约乘数换成张。<br>
+            费率只用公开已结算记录，时间以返回的 t 为准，不按 8 小时或当前周期补历史。一次大约 30 天，再用更早一页往前翻；比最早一条更早的留空。合约上的当前资金费率是下一期，还没结算，不计入。<br>
+            标记价取该分钟标记 K 线的开盘价。没有就留空，可以手填。乘数、标记价，以及第一次记下时的 USDT 汇率锁在这一行上。<br>
+            交易手续费另记，支出为负、返佣为正。公开的挂单/吃单费率不会当成你的手续费。<br>
+            填了手工实际就用手工实际，否则用估计（公开费率 × 标记价近似 × 手工仓位）。费用合计 = 资金费 + 交易手续费，不含开平仓价差，不是交易盈亏。结算前后 5 秒内改过数量的可以不计入。
+          </p>
+        </details>
+        <div id="gateBody"></div>
+      </div>
       <div class="card" id="quickCard">
         <div class="card-t">快捷记账（付完款敲两下手机背面）</div>
         <p class="hint" style="margin-bottom:6px">打开下面的「记一笔」页面：按金额、点分类就记好了，自动同步到账本。</p>
@@ -625,6 +651,7 @@
           • 投资账户 = 持仓市值 + 闲钱。买入、加仓、定投从闲钱扣，卖出、减仓、清仓回到闲钱；闲钱可与银行卡等账户互转（只能转出闲钱）。互转记在明细账本，不算收入、支出，也不算投资盈亏<br>
           • 外汇交易账户可绑定交易复盘：余额自动等于复盘账户（美元），每日盈亏记入账本和盈亏统计，入金出金按转账处理<br>
           • 每天北京时间 6:00 后打开 App，自动记录上一交易日收盘盈亏；今日盈亏 = 数量 ×（现价 − 前收盘价）。美股在北京时间次日 06:00 前仍算同一个交易日；休市日记 0。打开应用和回到前台会自动刷新行情<br>
+          • USDT 永续资金费在「我的 → 设置」手工估算：只读公开行情，不计入持仓、账本、外汇和总资产<br>
           • 数据默认存在本机浏览器；在「我的 → 设置 → 多设备同步」开启后，也会保存到你自己的 GitHub 私密 Gist
         </p>
       </div>
@@ -819,6 +846,44 @@
   </div>
 </div>
 
+<div class="modal-ov" id="gfModal">
+  <div class="modal">
+    <div class="modal-hd"><div class="modal-tt" id="gfTitle">记仓位</div><button type="button" class="modal-x" onclick="closeM('gfModal')">×</button></div>
+    <input type="hidden" id="gfMode" value="leg-new">
+    <input type="hidden" id="gfLegId">
+    <input type="hidden" id="gfChgId">
+    <input type="hidden" id="gfFeeId">
+    <div id="gfHead">
+      <div class="form-g" style="position:relative">
+        <label>合约（USDT 永续）</label>
+        <input class="form-c" id="gfContract" autocomplete="off" spellcheck="false" placeholder="BTC_USDT" oninput="gfSearch(this.value)" onfocus="gfSearch(this.value)">
+        <div class="suggest" id="gfSug"></div>
+      </div>
+      <div class="form-r">
+        <div class="form-g"><label>方向</label>
+          <select class="form-c" id="gfSide"><option value="long">做多</option><option value="short">做空</option></select>
+        </div>
+        <div class="form-g"><label>杠杆（只展示）</label>
+          <input class="form-c" id="gfLev" type="number" step="any" inputmode="decimal" placeholder="不影响资金费">
+        </div>
+      </div>
+    </div>
+    <div id="gfSizeBox">
+      <div class="form-r">
+        <div class="form-g"><label>数量</label><input class="form-c" id="gfSize" type="number" step="any" inputmode="decimal" placeholder="平仓填 0"></div>
+        <div class="form-g"><label>单位</label>
+          <select class="form-c" id="gfUnit"><option value="contracts">张</option><option value="coin">币</option></select>
+        </div>
+      </div>
+      <p class="hint" id="gfSizeHint">币会按合约乘数换成张。资金费按张数 × 乘数 × 标记价，不除以杠杆。</p>
+    </div>
+    <div class="form-g" id="gfWhenBox"><label>时间</label><input class="form-c" id="gfWhen" type="datetime-local" step="1"></div>
+    <div class="form-g" id="gfFeeBox" style="display:none"><label>金额（USDT，支出为负，返佣为正）</label><input class="form-c" id="gfFeeAmt" type="number" step="any" inputmode="decimal" placeholder="-1.25 或 0.30"></div>
+    <div class="form-g" id="gfNoteBox" style="display:none"><label>备注</label><input class="form-c" id="gfNote" placeholder="开仓手续费 / 返佣"></div>
+    <button type="button" class="btn btn-p" id="gfSaveBtn" onclick="gfSaveModal()">保存</button>
+  </div>
+</div>
+
 <script>
 const SK = 'allin_finance_v1';
 let S = {
@@ -830,7 +895,8 @@ let S = {
   dca: [],
   debts: [],
   rates: { USD: 7.15, HKD: 0.92, USDT: 7.15, updatedAt: null, source: '' }, // 7.15/0.92 只是从未拉到过汇率时的兜底；正常每次刷新行情、打开页面时都会从网上拉实时汇率
-  lastRefresh: null
+  lastRefresh: null,
+  gateFunding: [] // USDT 永续资金费手工记录。只在设置里估算，不进 positions / ledger / fx.days
 };
 let calY, calM, calSel = null;
 let navChart = null;
@@ -869,6 +935,7 @@ function load(){ try{ const r=localStorage.getItem(SK); if(r) S={...S,...JSON.pa
   let curFixed=false;
   (S.positions||[]).forEach(p=>{ if(p.currencyLock) return; const c=currencyForCode(p.symbol,p.type); if(c && p.currency!==c){ p.currency=c; curFixed=true; } });
   if(curFixed) try{ localStorage.setItem(SK, JSON.stringify(S)); }catch(e){}
+  if(!Array.isArray(S.gateFunding)) S.gateFunding=[];
 }
 /* 持仓交易记录：老数据（只有一次买入）自动变成第一条「底仓」记录，不删除任何字段 */
 function ensureTrades(p){
@@ -2568,6 +2635,828 @@ function tweenFig(el, n, text, yuan){
   };
   el._raf=requestAnimationFrame(step);
 }
+// ===== USDT 永续资金费（只在设置里，不进持仓 / 账本 / 外汇 / 总资产）=====
+// 只请求 Gate 公开行情：contracts、funding_rate、mark_ 的 1 分钟 K 线。
+// 不读账户、持仓、委托、成交、资金流水，也不保存密钥。
+const GF_API = 'https://api.gateio.ws/api/v4';
+const GF_EST_LABEL = '估计（公开费率 × 标记价近似 × 手工仓位）';
+const GF_NEAR_SEC = 5;
+const GF_SHOW = 6;
+let gfBusy = false, gfStatusText = '', gfNameList = null, gfNameP = null, gfMore = {};
+
+function gfEnsure(){ if(!Array.isArray(S.gateFunding)) S.gateFunding=[]; return S.gateFunding; }
+function gfLegs(){ return gfEnsure().filter(x=>x&&x.kind==='leg'); }
+function gfFees(){ return gfEnsure().filter(x=>x&&x.kind==='fee'); }
+function gfRows(){ return gfEnsure().filter(x=>x&&x.kind==='row'); }
+function gfMeta(){ return gfEnsure().find(x=>x&&x.kind==='meta')||{kind:'meta',at:null,error:'',gaps:[],specs:{}}; }
+function gfNormContract(raw){
+  let s=String(raw||'').trim().toUpperCase().replace(/[\s-]+/g,'_').replace(/_+/g,'_');
+  if(!s) return '';
+  if(s.indexOf('_')<0) s+='_USDT';
+  if(!/_USDT$/.test(s)) return '';
+  const base=s.slice(0,-5);
+  if(!base || !/^[\u4e00-\u9fffA-Z0-9]+$/.test(base)) return '';
+  return s;
+}
+function gfAllowed(path){
+  try{
+    const u=new URL(GF_API+path);
+    if(u.origin!=='https://api.gateio.ws') return false;
+    const prefix='/api/v4/futures/usdt/';
+    if(u.pathname.indexOf(prefix)!==0) return false;
+    const rest=decodeURIComponent(u.pathname.slice(prefix.length));
+    const keys=Array.from(u.searchParams.keys());
+    const digit=k=>{ const v=u.searchParams.get(k); return v==null||/^\d+$/.test(v); };
+    if(rest==='contracts') return u.search==='';
+    if(rest.indexOf('contracts/')===0){
+      const name=rest.slice('contracts/'.length);
+      return gfNormContract(name)===name && u.search==='';
+    }
+    if(rest==='funding_rate'){
+      const c=u.searchParams.get('contract');
+      if(gfNormContract(c)!==c || u.searchParams.get('limit')!=='1000') return false;
+      if(!digit('to')||!digit('from')) return false;
+      return keys.every(k=>k==='contract'||k==='limit'||k==='to'||k==='from');
+    }
+    if(rest==='candlesticks'){
+      const c=u.searchParams.get('contract')||'';
+      if(c.indexOf('mark_')!==0 || gfNormContract(c.slice(5))!==c.slice(5)) return false;
+      if(u.searchParams.get('interval')!=='1m') return false;
+      if(!/^\d+$/.test(u.searchParams.get('from')||'')||!/^\d+$/.test(u.searchParams.get('to')||'')) return false;
+      return keys.every(k=>k==='contract'||k==='interval'||k==='from'||k==='to');
+    }
+    return false;
+  }catch(e){ return false; }
+}
+function gfHitErr(session, path, msg){
+  if(!session) return;
+  const key=String(path).split('?')[0]+'|'+msg;
+  session.errs=session.errs||{};
+  session.errs[key]=(session.errs[key]||0)+1;
+  if(session.errs[key]>=2){ const err=new Error(msg); err.stop=true; throw err; }
+}
+async function gfGet(path, session){
+  if(!gfAllowed(path)) throw new Error('接口不在允许范围内');
+  let res;
+  try{ res=await fetch(GF_API+path,{cache:'no-store',mode:'cors'}); }
+  catch(e){ const msg=(e&&e.message)||'网络失败'; gfHitErr(session,path,msg); throw new Error(msg); }
+  if(!res.ok){
+    let detail='';
+    try{ const j=await res.json(); detail=(j&&(j.message||j.label))||''; }catch(e2){}
+    const msg='HTTP '+res.status+(detail?' '+detail:'');
+    gfHitErr(session,path,msg); throw new Error(msg);
+  }
+  try{ return await res.json(); }
+  catch(e){ gfHitErr(session,path,'返回不是 JSON'); throw new Error('返回不是 JSON'); }
+}
+function gfChanges(leg){
+  return ((leg&&leg.changes)||[]).filter(c=>c&&isFinite(+c.t)).slice().sort((a,b)=>(+a.t)-(+b.t)||String(a.id).localeCompare(String(b.id)));
+}
+function gfSizeAt(leg, t){
+  let size=0;
+  for(const c of gfChanges(leg)){ if(+c.t>+t) break; size=+c.size||0; }
+  return size>0?size:0;
+}
+function gfNearSec(leg, t){
+  let best=null;
+  gfChanges(leg).forEach(c=>{ const dt=Math.abs(+c.t-+t); if(dt<=GF_NEAR_SEC && (best==null||dt<best)) best=dt; });
+  return best;
+}
+function gfPositionValue(mark, size, quanto){
+  if(mark==null || !isFinite(+mark) || !(+mark>0) || !(+size>0) || !(+quanto>0)) return null;
+  return +mark * +size * +quanto;
+}
+function gfEstimate(side, mark, size, quanto, rate){
+  const value=gfPositionValue(mark, size, quanto);
+  if(value==null || !isFinite(+rate)) return null;
+  const sign=side==='short'?1:-1;
+  return sign * value * (+rate);
+}
+function gfContractsFromInput(input, unit, quanto){
+  const n=+input;
+  if(!isFinite(n) || n<0) return null;
+  if(unit==='coin'){ if(!(+quanto>0)) return null; return n/+quanto; }
+  return n;
+}
+function gfHasActual(row){ return !!(row && row.actual!=null && row.actual!=='' && isFinite(+row.actual)); }
+function gfRecalcCny(row){
+  const basis=gfHasActual(row)?+row.actual:(row.estimated!=null && isFinite(+row.estimated)?+row.estimated:null);
+  row.pnlCNY=(basis==null || !(+row.rateUSDT>0))?null:roundMoney(basis*+row.rateUSDT);
+}
+function gfGap(leg, history){
+  const ch=gfChanges(leg);
+  if(!ch.length || !history || !history.length) return null;
+  const openAt=+ch[0].t;
+  let oldest=null;
+  history.forEach(h=>{ const t=+h.t; if(isFinite(t)&&(oldest==null||t<oldest)) oldest=t; });
+  if(oldest==null || !(openAt<oldest)) return null;
+  return {contract:leg.contract, openAt, oldest};
+}
+function gfBuildLegRows(leg, history, markOpens, quantoNow, rateNow, prevById){
+  const rows=[], seen={};
+  (history||[]).forEach(h=>{
+    const t=+h.t, r=+h.r;
+    if(!isFinite(t) || !isFinite(r) || seen[t]) return;
+    seen[t]=1;
+    const size=gfSizeAt(leg, t);
+    if(!(size>0)) return;
+    const id=leg.id+':'+t;
+    const prev=prevById&&prevById[id];
+    const minute=Math.floor(t/60)*60;
+    let mark=null, markSrc='', quanto=(+quantoNow>0?+quantoNow:null), rateUSDT=(+rateNow>0?+rateNow:null), actual=null, excluded=false;
+    if(prev){
+      if(+prev.quanto>0) quanto=+prev.quanto;
+      if(+prev.rateUSDT>0) rateUSDT=+prev.rateUSDT;
+      if(gfHasActual(prev)) actual=+prev.actual;
+      excluded=!!prev.excluded;
+      if(prev.mark!=null && isFinite(+prev.mark) && +prev.mark>0){ mark=+prev.mark; markSrc=prev.markSrc||'candle'; }
+    }
+    if(mark==null && markOpens && markOpens[minute]!=null && isFinite(+markOpens[minute]) && +markOpens[minute]>0){
+      mark=+markOpens[minute]; markSrc='candle';
+    }
+    const estimated=gfEstimate(leg.side, mark, size, quanto, r);
+    const basis=actual!=null?actual:estimated;
+    let pnlCNY=(basis==null || !(+rateUSDT>0))?null:roundMoney(basis*rateUSDT);
+    if(prev && prev.pnlCNY!=null && basis!=null && +prev.rateUSDT>0 && Math.abs(+prev.rateUSDT-+rateUSDT)<1e-12){
+      const prevBasis=gfHasActual(prev)?+prev.actual:(prev.estimated!=null && isFinite(+prev.estimated)?+prev.estimated:null);
+      if(prevBasis!=null && Math.abs(prevBasis-basis)<1e-8) pnlCNY=+prev.pnlCNY;
+    }
+    const near=gfNearSec(leg, t);
+    rows.push({kind:'row',id,legId:leg.id,contract:leg.contract,t,r,size,quanto,mark,markSrc,estimated,actual,rateUSDT,pnlCNY,excluded,near:near!=null,nearSec:near});
+  });
+  return rows;
+}
+function gfRetouchRow(prev, leg){
+  if(!prev || !leg) return null;
+  const size=gfSizeAt(leg, prev.t);
+  if(!(size>0)) return null;
+  const estimated=gfEstimate(leg.side, prev.mark, size, prev.quanto, prev.r);
+  const actual=gfHasActual(prev)?+prev.actual:null;
+  const basis=actual!=null?actual:estimated;
+  let pnlCNY=(basis==null || !(+prev.rateUSDT>0))?null:roundMoney(basis*+prev.rateUSDT);
+  const prevBasis=gfHasActual(prev)?+prev.actual:(prev.estimated!=null && isFinite(+prev.estimated)?+prev.estimated:null);
+  if(prev.pnlCNY!=null && prevBasis!=null && basis!=null && Math.abs(prevBasis-basis)<1e-8) pnlCNY=+prev.pnlCNY;
+  const near=gfNearSec(leg, prev.t);
+  return {kind:'row',id:prev.id,legId:leg.id,contract:leg.contract,t:+prev.t,r:+prev.r,size,quanto:+prev.quanto,mark:prev.mark,markSrc:prev.markSrc||'',estimated,actual,rateUSDT:+prev.rateUSDT,pnlCNY,excluded:!!prev.excluded,near:near!=null,nearSec:near};
+}
+function gfSummarize(rows, fees){
+  let funding=0, fundingCny=0, actN=0, estN=0, missing=0, excluded=0;
+  (rows||[]).forEach(row=>{
+    if(!row || row.excluded){ if(row&&row.excluded) excluded++; return; }
+    if(gfHasActual(row)){ funding+=+row.actual; actN++; if(row.pnlCNY!=null && isFinite(+row.pnlCNY)) fundingCny+=+row.pnlCNY; }
+    else if(row.estimated!=null && isFinite(+row.estimated)){ funding+=+row.estimated; estN++; if(row.pnlCNY!=null && isFinite(+row.pnlCNY)) fundingCny+=+row.pnlCNY; }
+    else missing++;
+  });
+  let feeSum=0;
+  (fees||[]).forEach(f=>{ feeSum+=+f.amount||0; });
+  return {funding, fundingCny, fees:feeSum, net:funding+feeSum, actN, estN, missing, excluded};
+}
+function gfFundingLabel(sum){
+  if(sum.actN && !sum.estN) return '手工实际';
+  if(!sum.actN && sum.estN) return GF_EST_LABEL;
+  if(sum.actN && sum.estN) return '有手工实际的按手工实际，其余为'+GF_EST_LABEL;
+  return '';
+}
+function gfRecomputeLocal(){
+  const legs=gfLegs();
+  const next=[];
+  gfRows().forEach(prev=>{
+    const leg=legs.find(l=>l.id===prev.legId);
+    if(!leg) return;
+    const row=gfRetouchRow(prev, leg);
+    if(row) next.push(row);
+  });
+  const rest=gfEnsure().filter(x=>x&&x.kind!=='row');
+  S.gateFunding=rest.concat(next);
+}
+function gfFmtU(n){
+  if(n==null || !isFinite(+n)) return '--';
+  const v=+n, a=Math.abs(v);
+  const d=a>=100?2:a>=0.01?4:6;
+  return (v>0?'+':v<0?'-':'')+fmt(a,d)+' USDT';
+}
+function gfFmtAbsU(n){ if(n==null||!isFinite(+n)) return '--'; const a=Math.abs(+n); return fmt(a, a>=100?2:4)+' USDT'; }
+function gfFmtQty(n){
+  if(!isFinite(+n)) return '--';
+  const x=Math.round(+n*1e8)/1e8;
+  if(Math.abs(x-Math.round(x))<1e-8) return fmt(x,0);
+  return String(x);
+}
+function gfFmtPx(n){
+  if(n==null || !isFinite(+n)) return '--';
+  const a=Math.abs(+n);
+  return fmt(+n, a>=1000?2:a>=1?4:8);
+}
+function gfFmtRate(r){
+  if(r==null || !isFinite(+r)) return '--';
+  const pct=+r*100, d=Math.abs(pct)>=0.01?4:6;
+  return (pct>0?'+':'')+pct.toFixed(d)+'%';
+}
+function gfTime(sec){
+  if(sec==null || !isFinite(+sec)) return '--';
+  const d=new Date(+sec*1000), p=n=>String(n).padStart(2,'0');
+  return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+' '+p(d.getHours())+':'+p(d.getMinutes())+':'+p(d.getSeconds());
+}
+function gfToInput(sec){
+  const d=new Date((+sec||Date.now()/1000)*1000), p=n=>String(n).padStart(2,'0');
+  return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+'T'+p(d.getHours())+':'+p(d.getMinutes())+':'+p(d.getSeconds());
+}
+function gfFromInput(v){ if(!v) return null; const ms=Date.parse(v); return isFinite(ms)?Math.round(ms/1000):null; }
+function gfOpenView(leg, spec, liveRate){
+  if(!leg || !spec) return null;
+  const size=gfSizeAt(leg, Math.floor(Date.now()/1000));
+  if(!(size>0)) return null;
+  const mark=+spec.mark, quanto=+spec.quanto;
+  const value=gfPositionValue(mark, size, quanto);
+  if(value==null) return null;
+  const rate=+liveRate;
+  return {size, mark, quanto, value, rate, cny:rate>0?value*rate:null};
+}
+function gfLoadNames(){
+  if(gfNameList) return Promise.resolve(gfNameList);
+  if(!gfNameP) gfNameP=gfGet('/futures/usdt/contracts',{errs:{}}).then(list=>{
+    if(!Array.isArray(list)) throw new Error('合约列表无效');
+    gfNameList=list.map(c=>c&&c.name).filter(n=>gfNormContract(n)===n).sort((a,b)=>a.localeCompare(b,'zh'));
+    return gfNameList;
+  }).catch(e=>{ gfNameP=null; throw e; });
+  return gfNameP;
+}
+function gfSearch(q){
+  const box=document.getElementById('gfSug'); if(!box) return;
+  const raw=String(q||'').trim().toUpperCase();
+  const paint=list=>{
+    const hit=(list||[]).filter(n=>!raw || n.toUpperCase().indexOf(raw)>=0 || n.toUpperCase().indexOf(raw.replace(/_USDT$/,''))>=0).slice(0,8);
+    if(!hit.length){ box.style.display='none'; return; }
+    box.innerHTML=hit.map(n=>`<button type="button" class="sug" onmousedown="gfPick('${esc(n)}')">${esc(n)}</button>`).join('');
+    box.style.display='block';
+  };
+  if(!gfNameList){
+    box.style.display='block';
+    box.innerHTML='<button type="button" class="sug" disabled>正在读取合约…</button>';
+    gfLoadNames().then(list=>{ const el=document.getElementById('gfContract'); if(el && el.value===q) paint(list); }).catch(()=>{ box.style.display='none'; });
+    return;
+  }
+  paint(gfNameList);
+}
+function gfPick(name){
+  const el=document.getElementById('gfContract'); if(el) el.value=name;
+  const box=document.getElementById('gfSug'); if(box) box.style.display='none';
+}
+function gfLookup(contract){
+  return gfGet('/futures/usdt/contracts/'+encodeURIComponent(contract),{errs:{}}).then(spec=>{
+    if(!spec || typeof spec!=='object' || Array.isArray(spec)) throw new Error('合约数据无效');
+    const name=gfNormContract(spec.name||contract);
+    if(name!==contract || spec.type!=='direct') throw new Error('只支持 USDT 正向永续');
+    if(!(+spec.quanto_multiplier>0)) throw new Error('这个合约没有乘数，没法把币数换成张数');
+    spec.name=name;
+    return spec;
+  });
+}
+function gfNoteSpec(spec){
+  const cur=gfEnsure();
+  const prev=cur.find(x=>x&&x.kind==='meta')||{kind:'meta',at:null,error:'',gaps:[],specs:{}};
+  const specs=Object.assign({}, prev.specs||{});
+  const upcoming=(spec.funding_rate!=null && spec.funding_rate!=='' && isFinite(+spec.funding_rate))?+spec.funding_rate:null;
+  specs[spec.name]={name:spec.name, quanto:+spec.quanto_multiplier, mark:+spec.mark_price>0?+spec.mark_price:null, upcoming, next:+spec.funding_next_apply>0?+spec.funding_next_apply:null};
+  const rest=cur.filter(x=>!x || x.kind!=='meta');
+  rest.push(Object.assign({}, prev, {kind:'meta', specs}));
+  S.gateFunding=rest;
+}
+function gfKnownQuanto(contract){
+  const s=gfMeta().specs && gfMeta().specs[contract];
+  if(s && +s.quanto>0) return +s.quanto;
+  let q=0;
+  gfLegs().forEach(l=>{ if(l.contract!==contract) return; gfChanges(l).forEach(c=>{ if(+c.quanto>0) q=+c.quanto; }); });
+  return q;
+}
+function gfReadLev(){
+  const s=String(document.getElementById('gfLev').value||'').trim();
+  if(!s) return null;
+  const n=+s;
+  return n>0?n:NaN;
+}
+function gfShowBoxes(mode){
+  const head=mode==='leg-new'||mode==='leg-edit';
+  const size=mode==='leg-new'||mode==='change';
+  const when=mode==='leg-new'||mode==='change';
+  document.getElementById('gfHead').style.display=head?'':'none';
+  document.getElementById('gfSizeBox').style.display=size?'':'none';
+  document.getElementById('gfWhenBox').style.display=when?'':'none';
+  document.getElementById('gfFeeBox').style.display=mode==='fee'?'':'none';
+  document.getElementById('gfNoteBox').style.display=mode==='fee'?'':'none';
+}
+function gfOpenLeg(id){
+  const leg=id?gfLegs().find(l=>l.id===id):null;
+  document.getElementById('gfMode').value=leg?'leg-edit':'leg-new';
+  document.getElementById('gfLegId').value=leg?leg.id:'';
+  document.getElementById('gfTitle').textContent=leg?'编辑仓位':'记仓位';
+  document.getElementById('gfContract').value=leg?leg.contract:'';
+  document.getElementById('gfSide').value=leg&&leg.side==='short'?'short':'long';
+  document.getElementById('gfLev').value=leg&&leg.leverage?leg.leverage:'';
+  document.getElementById('gfSize').value='';
+  document.getElementById('gfUnit').value='contracts';
+  document.getElementById('gfWhen').value=gfToInput(Date.now()/1000);
+  gfShowBoxes(leg?'leg-edit':'leg-new');
+  const sug=document.getElementById('gfSug'); if(sug) sug.style.display='none';
+  openM('gfModal');
+}
+function gfOpenChange(legId, chgId, closing){
+  const leg=gfLegs().find(l=>l.id===legId); if(!leg) return;
+  const ch=chgId?(leg.changes||[]).find(c=>c.id===chgId):null;
+  document.getElementById('gfMode').value='change';
+  document.getElementById('gfLegId').value=leg.id;
+  document.getElementById('gfChgId').value=ch?ch.id:'';
+  document.getElementById('gfTitle').textContent=closing?'平仓':(ch?'改这条数量':'改数量');
+  document.getElementById('gfUnit').value=ch&&ch.unit==='coin'?'coin':'contracts';
+  document.getElementById('gfSize').value=closing?'0':(ch?(ch.input!=null?ch.input:ch.size):'');
+  document.getElementById('gfWhen').value=gfToInput(ch?ch.t:Date.now()/1000);
+  gfShowBoxes('change');
+  openM('gfModal');
+}
+function gfOpenFee(id){
+  const fee=id?gfFees().find(f=>f.id===id):null;
+  document.getElementById('gfMode').value='fee';
+  document.getElementById('gfFeeId').value=fee?fee.id:'';
+  document.getElementById('gfTitle').textContent=fee?'改手续费':'记手续费';
+  document.getElementById('gfFeeAmt').value=fee?fee.amount:'';
+  document.getElementById('gfNote').value=fee?(fee.note||''):'';
+  document.getElementById('gfWhen').value=gfToInput(fee?fee.t:Date.now()/1000);
+  gfShowBoxes('fee');
+  openM('gfModal');
+}
+function gfAfterTimeline(){ gfRecomputeLocal(); save(); renderAll(); gfRefresh(); }
+async function gfCommitNewLeg(){
+  const contract=gfNormContract(document.getElementById('gfContract').value);
+  if(!contract){ toast('请填写 USDT 永续合约，例如 BTC_USDT'); return; }
+  const lev=gfReadLev();
+  if(typeof lev==='number' && Number.isNaN(lev)){ toast('杠杆只作展示，请留空或填大于 0 的数'); return; }
+  const unit=document.getElementById('gfUnit').value==='coin'?'coin':'contracts';
+  const t=gfFromInput(document.getElementById('gfWhen').value);
+  if(t==null){ toast('请填写开仓时间'); return; }
+  const spec=await gfLookup(contract);
+  gfNoteSpec(spec);
+  const quanto=+spec.quanto_multiplier;
+  const size=gfContractsFromInput(document.getElementById('gfSize').value, unit, quanto);
+  if(size==null){ toast(unit==='coin'?'无法把币数换成张数':'请填写数量'); return; }
+  if(!(size>0)){ toast('开仓数量要大于 0'); return; }
+  const side=document.getElementById('gfSide').value==='short'?'short':'long';
+  S.gateFunding.push({kind:'leg',id:uid(),contract,side,leverage:lev,changes:[{id:uid(),t,size,unit,input:+document.getElementById('gfSize').value,quanto}]});
+  const sug=document.getElementById('gfSug'); if(sug) sug.style.display='none';
+  closeM('gfModal');
+  gfAfterTimeline();
+}
+async function gfCommitLegEdit(){
+  const leg=gfLegs().find(l=>l.id===document.getElementById('gfLegId').value); if(!leg) return;
+  const contract=gfNormContract(document.getElementById('gfContract').value);
+  if(!contract){ toast('请填写 USDT 永续合约，例如 BTC_USDT'); return; }
+  const lev=gfReadLev();
+  if(typeof lev==='number' && Number.isNaN(lev)){ toast('杠杆只作展示，请留空或填大于 0 的数'); return; }
+  if(contract!==leg.contract){ const spec=await gfLookup(contract); gfNoteSpec(spec); }
+  leg.contract=contract;
+  leg.side=document.getElementById('gfSide').value==='short'?'short':'long';
+  leg.leverage=lev;
+  const sug=document.getElementById('gfSug'); if(sug) sug.style.display='none';
+  closeM('gfModal');
+  gfAfterTimeline();
+}
+async function gfCommitChange(){
+  const leg=gfLegs().find(l=>l.id===document.getElementById('gfLegId').value); if(!leg) return;
+  const unit=document.getElementById('gfUnit').value==='coin'?'coin':'contracts';
+  const t=gfFromInput(document.getElementById('gfWhen').value);
+  if(t==null){ toast('请填写时间'); return; }
+  const chgId=document.getElementById('gfChgId').value;
+  const prev=chgId?(leg.changes||[]).find(c=>c.id===chgId):null;
+  let quanto=prev&&+prev.quanto>0?+prev.quanto:gfKnownQuanto(leg.contract);
+  if(!(quanto>0) && unit==='coin'){ const spec=await gfLookup(leg.contract); gfNoteSpec(spec); quanto=+spec.quanto_multiplier; }
+  const size=gfContractsFromInput(document.getElementById('gfSize').value, unit, quanto);
+  if(size==null){ toast('请填写数量，平仓填 0'); return; }
+  const rec={id:prev?prev.id:uid(),t,size,unit,input:+document.getElementById('gfSize').value,quanto:quanto||0};
+  if(prev) Object.assign(prev, rec); else leg.changes.push(rec);
+  closeM('gfModal');
+  gfAfterTimeline();
+}
+async function gfCommitFee(){
+  const amt=+document.getElementById('gfFeeAmt').value;
+  if(!isFinite(amt)){ toast('请填写金额，支出为负，返佣为正'); return; }
+  const t=gfFromInput(document.getElementById('gfWhen').value);
+  if(t==null){ toast('请填写时间'); return; }
+  const note=document.getElementById('gfNote').value.trim();
+  const id=document.getElementById('gfFeeId').value;
+  if(id){ const fee=gfFees().find(f=>f.id===id); if(!fee) return; fee.amount=amt; fee.t=t; fee.note=note; }
+  else gfEnsure().push({kind:'fee',id:uid(),t,amount:amt,note});
+  closeM('gfModal');
+  save(); renderAll();
+}
+async function gfSaveModal(){
+  const btn=document.getElementById('gfSaveBtn');
+  if(btn) btn.disabled=true;
+  try{
+    const mode=document.getElementById('gfMode').value;
+    if(mode==='fee') await gfCommitFee();
+    else if(mode==='change') await gfCommitChange();
+    else if(mode==='leg-edit') await gfCommitLegEdit();
+    else await gfCommitNewLeg();
+  }catch(e){ toast((e&&e.message)||'保存失败'); }
+  finally{ if(btn) btn.disabled=false; }
+}
+function gfDeleteLeg(id){
+  if(!confirm('删除这笔仓位和对应的资金费估算？手续费清单不受影响。')) return;
+  S.gateFunding=gfEnsure().filter(x=>{
+    if(!x) return false;
+    if(x.kind==='leg' && x.id===id) return false;
+    if(x.kind==='row' && x.legId===id) return false;
+    return true;
+  });
+  save(); renderAll();
+}
+function gfDeleteChange(legId, chgId){
+  const leg=gfLegs().find(l=>l.id===legId); if(!leg) return;
+  if((leg.changes||[]).length<=1){ gfDeleteLeg(legId); return; }
+  if(!confirm('删除这条数量记录？')) return;
+  leg.changes=(leg.changes||[]).filter(c=>c.id!==chgId);
+  gfAfterTimeline();
+}
+function gfDeleteFee(id){
+  if(!confirm('删除这笔手续费？')) return;
+  S.gateFunding=gfEnsure().filter(x=>!(x&&x.kind==='fee'&&x.id===id));
+  save(); renderAll();
+}
+function gfSetActual(id, raw){
+  const row=gfRows().find(r=>r.id===id); if(!row) return;
+  const s=String(raw==null?'':raw).trim();
+  if(!s) row.actual=null;
+  else { const n=+s; if(!isFinite(n)) return toast('请填写数字'); row.actual=n; }
+  gfRecalcCny(row); save(); renderAll();
+}
+function gfSetMark(id, raw){
+  const row=gfRows().find(r=>r.id===id); if(!row) return;
+  const leg=gfLegs().find(l=>l.id===row.legId);
+  const s=String(raw==null?'':raw).trim();
+  if(!s){ row.mark=null; row.markSrc=''; }
+  else { const n=+s; if(!(n>0)) return toast('标记价要大于 0'); row.mark=n; row.markSrc='manual'; }
+  row.estimated=leg?gfEstimate(leg.side, row.mark, row.size, row.quanto, row.r):null;
+  gfRecalcCny(row); save(); renderAll();
+}
+function gfToggleRow(id){ const row=gfRows().find(r=>r.id===id); if(!row) return; row.excluded=!row.excluded; save(); renderAll(); }
+function gfToggleMore(id){ gfMore[id]=!gfMore[id]; renderGateFunding(); }
+async function gfFetchHistory(contract, sinceSec, session){
+  const out=[], seen={};
+  let to=null;
+  for(let page=0; page<20; page++){
+    let path='/futures/usdt/funding_rate?contract='+encodeURIComponent(contract)+'&limit=1000';
+    if(to!=null) path+='&to='+to;
+    const rows=await gfGet(path, session);
+    if(!Array.isArray(rows) || !rows.length) break;
+    let oldest=null;
+    rows.forEach(row=>{
+      const t=+row.t;
+      if(!isFinite(t) || row.r==null || row.r==='' || !isFinite(+row.r)) return;
+      if(oldest==null || t<oldest) oldest=t;
+      if(!seen[t]){ seen[t]=1; out.push({t, r:+row.r}); }
+    });
+    if(oldest==null) break;
+    if(sinceSec!=null && isFinite(sinceSec) && oldest<=sinceSec) break;
+    const next=oldest-1;
+    if(to!=null && next>=to) break;
+    to=next;
+  }
+  out.sort((a,b)=>b.t-a.t);
+  return out;
+}
+async function gfFetchMarks(contract, minutes, session){
+  const uniq=Array.from(new Set(minutes)).filter(t=>isFinite(t)).sort((a,b)=>a-b);
+  const opens={};
+  const span=1990*60;
+  let i=0;
+  while(i<uniq.length){
+    const start=uniq[i];
+    let j=i+1;
+    while(j<uniq.length && uniq[j]-start<=span) j++;
+    const end=uniq[j-1];
+    const q=new URLSearchParams({contract:'mark_'+contract, interval:'1m', from:String(start), to:String(end+60)});
+    const path='/futures/usdt/candlesticks?'+q.toString();
+    try{
+      const rows=await gfGet(path, session);
+      if(!Array.isArray(rows)){ gfHitErr(session, path, '标记价数据无效'); throw new Error('标记价数据无效'); }
+      rows.forEach(c=>{
+        if(!c || c.t==null || c.o==null || c.o==='') return;
+        const o=+c.o;
+        if(isFinite(o) && o>0) opens[+c.t]=o;
+      });
+    }catch(e){ if(e&&e.stop) throw e; }
+    i=j;
+  }
+  return opens;
+}
+async function gfRefresh(){
+  if(gfBusy){ toast('正在刷新'); return; }
+  const legs=gfLegs();
+  if(!legs.length){ toast('先记一笔仓位'); return; }
+  gfBusy=true;
+  const btn=document.getElementById('gfRefreshBtn'); if(btn) btn.disabled=true;
+  gfStatusText='正在读取公开已结算费率…';
+  renderGateFunding();
+  const session={errs:{}};
+  try{
+    if(!(S.rates&&S.rates.updatedAt)){ try{ await fetchRates(); }catch(e){} }
+    const rateNow=+(S.rates&&S.rates.USDT)||7.15;
+    const groups={};
+    legs.forEach(l=>{ (groups[l.contract]=groups[l.contract]||[]).push(l); });
+    const prevById={};
+    gfRows().forEach(r=>{ prevById[r.id]=r; });
+    const built=[], builtIds={};
+    const gaps=[];
+    const specs={};
+    for(const contract of Object.keys(groups)){
+      gfStatusText='正在读取 '+contract+' …';
+      renderGateFunding();
+      const spec=await gfLookup(contract);
+      const quanto=+spec.quanto_multiplier;
+      const upcoming=(spec.funding_rate!=null && spec.funding_rate!=='' && isFinite(+spec.funding_rate))?+spec.funding_rate:null;
+      specs[contract]={name:spec.name, quanto, mark:+spec.mark_price>0?+spec.mark_price:null, upcoming, next:+spec.funding_next_apply>0?+spec.funding_next_apply:null};
+      const times=[];
+      groups[contract].forEach(leg=>{ const ch=gfChanges(leg); if(ch.length) times.push(+ch[0].t); });
+      const earliest=times.length?Math.min.apply(null, times):null;
+      const history=await gfFetchHistory(contract, earliest, session);
+      if(!history.length){
+        groups[contract].forEach(leg=>{ const ch=gfChanges(leg); if(ch.length) gaps.push({contract, openAt:+ch[0].t, oldest:null, empty:true}); });
+      } else {
+        groups[contract].forEach(leg=>{ const g=gfGap(leg, history); if(g) gaps.push(g); });
+      }
+      const minutes=[];
+      groups[contract].forEach(leg=>{
+        history.forEach(h=>{
+          if(!(gfSizeAt(leg, h.t)>0)) return;
+          const prev=prevById[leg.id+':'+h.t];
+          if(prev && prev.mark!=null && isFinite(+prev.mark) && +prev.mark>0) return;
+          minutes.push(Math.floor(h.t/60)*60);
+        });
+      });
+      let opens={};
+      if(minutes.length) opens=await gfFetchMarks(contract, minutes, session);
+      groups[contract].forEach(leg=>{
+        gfBuildLegRows(leg, history, opens, quanto, rateNow, prevById).forEach(r=>{ built.push(r); builtIds[r.id]=1; });
+      });
+    }
+    const kept=[];
+    gfRows().forEach(prev=>{
+      if(builtIds[prev.id]) return;
+      const leg=legs.find(l=>l.id===prev.legId);
+      if(!leg) return;
+      const row=gfRetouchRow(prev, leg);
+      if(row) kept.push(row);
+    });
+    const rest=gfEnsure().filter(x=>x&&x.kind!=='row'&&x.kind!=='meta');
+    S.gateFunding=rest.concat(kept, built, [{kind:'meta', at:Date.now(), error:'', gaps, specs}]);
+    gfStatusText='';
+    save(); renderAll();
+    const miss=kept.concat(built).filter(r=>!r.excluded && !gfHasActual(r) && r.estimated==null).length;
+    toast(miss?('估算已更新，还有 '+miss+' 笔缺标记价'):'资金费估算已更新');
+  }catch(e){
+    const msg=(e&&e.message)||'刷新失败';
+    gfStatusText='';
+    const prev=gfMeta();
+    const rest=gfEnsure().filter(x=>!x || x.kind!=='meta');
+    rest.push(Object.assign({}, prev, {kind:'meta', error:msg}));
+    S.gateFunding=rest;
+    save(); renderAll();
+    toast('刷新失败，已保留上次估算：'+msg);
+  }finally{
+    gfBusy=false; gfStatusText='';
+    const b=document.getElementById('gfRefreshBtn'); if(b) b.disabled=false;
+    renderGateFunding();
+  }
+}
+function gfChangeLabel(ch, i){ if(!(+ch.size>0)) return '平仓'; return i===0?'开仓':'改数量'; }
+function gfSizeText(ch){
+  const size=+ch.size||0;
+  let s=gfFmtQty(size)+' 张';
+  if(ch.unit==='coin') s=gfFmtQty(ch.input)+' 币 · '+s;
+  else if(+ch.quanto>0) s+=' · '+gfFmtQty(size*ch.quanto)+' 币';
+  return s;
+}
+function renderGateFunding(){
+  const el=document.getElementById('gateBody'); if(!el) return;
+  const legs=gfLegs();
+  const fees=gfFees().slice().sort((a,b)=>(+b.t)-(+a.t));
+  const allRows=gfRows();
+  const rows=allRows.filter(r=>legs.some(l=>l.id===r.legId));
+  const meta=gfMeta();
+  const sum=gfSummarize(rows, fees);
+  const live=+(S.rates&&S.rates.USDT)||0;
+  const now=Math.floor(Date.now()/1000);
+  let html='';
+  if(gfStatusText) html+=`<p class="hint">${esc(gfStatusText)}</p>`;
+  if(meta.error) html+=`<p class="hint" style="color:var(--warning)">上次刷新失败，仍用上次保存的估算：${esc(meta.error)}</p>`;
+  if(meta.at && !gfStatusText) html+=`<p class="last-u">估算更新于 ${esc(rateTimeStr(meta.at))}</p>`;
+  const seenG={};
+  (meta.gaps||[]).forEach(g=>{
+    const k=g.contract+'|'+(g.openAt||'')+'|'+(g.oldest||'')+'|'+(g.empty?1:0);
+    if(seenG[k]) return; seenG[k]=1;
+    if(g.empty || g.oldest==null) html+=`<p class="hint" style="color:var(--warning)">${esc(g.contract)} 没有读到已结算费率，更早的时段留空。</p>`;
+    else html+=`<p class="hint" style="color:var(--warning)">${esc(g.contract)}：公开费率最早到 ${esc(gfTime(g.oldest))}，开仓 ${esc(gfTime(g.openAt))} 更早的结算没有费率，已留空。</p>`;
+  });
+  if(!legs.length && !fees.length){
+    el.innerHTML=html+'<div class="empty">还没有手工仓位。记一笔多空和数量后，点刷新估算。</div>';
+    return;
+  }
+  const fundingShown=(sum.actN||sum.estN)?sum.funding:null;
+  const feeShown=fees.length?sum.fees:null;
+  const netShown=(fundingShown==null && feeShown==null)?null:(fundingShown||0)+(feeShown||0);
+  const label=gfFundingLabel(sum);
+  let extra='<p class="hint" style="margin-top:8px">费用合计 = 资金费 + 交易手续费，不含开平仓价差，不是交易盈亏。</p>';
+  if(label) extra+=`<p class="hint">资金费口径：${esc(label)}</p>`;
+  if(sum.actN||sum.estN) extra+=`<div class="money-line"><span>结算折合</span><b>¥${fmt(sum.fundingCny)}</b></div><p class="hint">每笔记入时锁定当时的 USDT 汇率，之后刷新汇率不会改这笔人民币。</p>`;
+  if(sum.missing) extra+=`<p class="hint">还有 ${sum.missing} 笔没有标记价，未计入。可在该行手填。</p>`;
+  if(sum.excluded) extra+=`<p class="hint">${sum.excluded} 笔已排除，不计入合计。</p>`;
+  html+=moneyCard({
+    compact:true, k:'费用合计', main:netShown==null?'--':gfFmtU(netShown), mainCls:netShown==null?'':(netShown>=0?'up':'down'),
+    pair:[
+      {l:'资金费', v:fundingShown==null?'--':gfFmtU(fundingShown), cls:fundingShown==null?'':(fundingShown>=0?'up':'down')},
+      {l:'交易手续费', v:feeShown==null?'--':gfFmtU(feeShown), cls:feeShown==null?'':(feeShown>=0?'up':'down')}
+    ],
+    extra
+  });
+  const dup={};
+  legs.forEach(l=>{ if(gfSizeAt(l, now)>0) dup[l.contract]=(dup[l.contract]||0)+1; });
+  const dupNames=Object.keys(dup).filter(k=>dup[k]>1);
+  if(dupNames.length) html+=`<p class="hint" style="color:var(--warning)">${esc(dupNames.join('、'))} 有多笔未平仓，会分开估算。请确认没有把同一仓位记了两遍。</p>`;
+  const specs=meta.specs||{};
+  let openHtml='';
+  legs.forEach(leg=>{
+    const view=gfOpenView(leg, specs[leg.contract], live);
+    if(!view) return;
+    const spec=specs[leg.contract]||{};
+    const lev=leg.leverage>0?`杠杆 ${esc(gfFmtQty(leg.leverage))}x（仅展示，不改变名义） · `:'';
+    const up=spec.upcoming!=null?`下一期资金费率 ${gfFmtRate(spec.upcoming)}${spec.next?' · '+gfTime(spec.next):''}（未结算，不计入）`:'';
+    openHtml+=`<div class="item"><div class="item-name">${esc(leg.contract)} ${leg.side==='short'?'做空':'做多'} ${esc(gfFmtQty(view.size))} 张</div>
+      <div class="item-meta">${lev}标记价 ${esc(gfFmtPx(view.mark))} · 乘数 ${esc(gfFmtQty(view.quanto))} · 名义 ${esc(gfFmtAbsU(view.value))}</div>
+      <div class="item-meta">当前汇率 ${esc(fmtRate(view.rate))} · 约 ¥${view.cny==null?'--':fmt(view.cny)}</div>
+      ${up?`<div class="item-meta">${esc(up)}</div>`:''}</div>`;
+  });
+  if(openHtml) html+=`<div class="card-t" style="padding-bottom:0">未平仓名义</div><p class="hint">按当前汇率折合，不计入上面的结算。</p>`+openHtml;
+  legs.forEach(leg=>{
+    const ch=gfChanges(leg);
+    const nowSize=gfSizeAt(leg, now);
+    const mine=rows.filter(r=>r.legId===leg.id).sort((a,b)=>b.t-a.t);
+    const lev=leg.leverage>0?` · 杠杆 ${esc(gfFmtQty(leg.leverage))}x（仅展示）`:'';
+    html+=`<div class="item"><div class="item-top"><div><div class="item-name">${esc(leg.contract)} <span class="badge">${leg.side==='short'?'做空':'做多'}</span></div>
+      <div class="item-meta">${nowSize>0?'持仓中 '+esc(gfFmtQty(nowSize))+' 张':'已平仓'}${lev} · 结算 ${mine.length} 笔</div></div></div>`;
+    ch.forEach((c,i)=>{
+      html+=`<div class="item-meta">${esc(gfChangeLabel(c,i))} ${esc(gfTime(c.t))} · ${esc(gfSizeText(c))}
+        <button type="button" class="btn-sm" onclick="gfOpenChange('${leg.id}','${c.id}')">改</button>
+        <button type="button" class="btn-sm dan" onclick="gfDeleteChange('${leg.id}','${c.id}')">删</button></div>`;
+    });
+    html+=`<div class="btn-row">
+      <button type="button" class="btn-sm" onclick="gfOpenChange('${leg.id}')">改数量</button>
+      <button type="button" class="btn-sm" onclick="gfOpenChange('${leg.id}','',1)">平仓</button>
+      <button type="button" class="btn-sm" onclick="gfOpenLeg('${leg.id}')">编辑</button>
+      <button type="button" class="btn-sm dan" onclick="gfDeleteLeg('${leg.id}')">删除</button>
+    </div>`;
+    const shown=gfMore[leg.id]?mine:mine.slice(0, GF_SHOW);
+    shown.forEach(row=>{
+      const used=gfHasActual(row)?'手工实际':(row.estimated!=null && isFinite(+row.estimated)?'估计':'缺标记价');
+      const title=gfHasActual(row)?'手工实际':(row.estimated!=null?GF_EST_LABEL:'');
+      const amt=gfHasActual(row)?+row.actual:(row.estimated!=null && isFinite(+row.estimated)?+row.estimated:null);
+      const nearTxt=row.near?(row.nearSec?`数量改动离这笔结算只有 ${row.nearSec} 秒，可以不计入。`:'数量改动就在这笔结算的时刻，可以不计入。'):'';
+      html+=`<div class="item" style="${row.excluded?'opacity:.55':''}">
+        <div class="item-top"><div><div class="item-name">${esc(gfTime(row.t))}</div>
+          <div class="item-meta">费率 ${esc(gfFmtRate(row.r))} · ${esc(gfFmtQty(row.size))} 张 · 乘数 ${row.quanto?esc(gfFmtQty(row.quanto)):'--'} · 标记价 ${row.mark==null?'未取到':esc(gfFmtPx(row.mark))}${row.mark!=null?'（已锁定）':''}</div>
+          <div class="item-meta">${esc(used)} ${amt==null?'':esc(gfFmtU(amt))}${row.rateUSDT?(' · 锁定汇率 '+esc(fmtRate(row.rateUSDT))):''}${row.pnlCNY!=null?(' · '+esc(fmtP(row.pnlCNY))+' 元'):''}</div>
+          ${nearTxt?`<div class="item-meta" style="color:var(--warning)">${esc(nearTxt)}</div>`:''}
+        </div><div class="item-r"><div class="item-pnl ${amt==null?'':(amt>=0?'up':'down')}">${amt==null?'--':esc(gfFmtU(amt))}</div><div class="item-meta" title="${esc(title)}">${row.excluded?'不计入':esc(used)}</div></div></div>
+        <div class="gf-inline">
+          <label>手工实际<input class="form-c" type="number" step="any" inputmode="decimal" placeholder="可空" value="${row.actual==null?'':esc(row.actual)}" onchange="gfSetActual('${row.id}', this.value)"></label>
+          <label>标记价<input class="form-c" type="number" step="any" inputmode="decimal" placeholder="手填" value="${row.mark==null?'':esc(row.mark)}" onchange="gfSetMark('${row.id}', this.value)"></label>
+          ${(row.near||row.excluded)?`<button type="button" class="btn-sm ${row.excluded?'':'warn'}" onclick="gfToggleRow('${row.id}')">${row.excluded?'计入这笔':'这笔不计入'}</button>`:''}
+        </div></div>`;
+    });
+    if(mine.length>GF_SHOW) html+=`<button type="button" class="more-btn" onclick="gfToggleMore('${leg.id}')">${gfMore[leg.id]?'收起更早结算':('展开更早结算（'+(mine.length-GF_SHOW)+'）')}</button>`;
+    html+='</div>';
+  });
+  html+=`<div class="card-t" style="padding-bottom:0">交易手续费</div>`;
+  if(!fees.length) html+='<div class="empty">还没有手续费。支出填负数，返佣填正数。不会用公开挂单/吃单费率自动扣。</div>';
+  else fees.forEach(f=>{
+    html+=`<div class="item"><div class="item-top"><div><div class="item-name">${esc(f.note||'手续费')}</div><div class="item-meta">${esc(gfTime(f.t))}</div></div>
+      <div class="item-r"><div class="item-pnl ${(+f.amount||0)>=0?'up':'down'}">${esc(gfFmtU(+f.amount||0))}</div></div></div>
+      <div class="btn-row"><button type="button" class="btn-sm" onclick="gfOpenFee('${f.id}')">编辑</button><button type="button" class="btn-sm dan" onclick="gfDeleteFee('${f.id}')">删除</button></div></div>`;
+  });
+  el.innerHTML=html;
+}
+function gfSelfCheck(){
+  const errs=[];
+  const eq=(a,b,msg)=>{ const close=typeof a==='number'&&typeof b==='number'&&Math.abs(a-b)<1e-8; if(a!==b && !close) errs.push(msg+' => '+a+' != '+b); };
+  eq(gfPositionValue(65000,100,0.0001), 65000*100*0.0001, 'value');
+  eq(gfEstimate('long',65000,100,0.0001,0.0001), -65000*100*0.0001*0.0001, 'long pays');
+  eq(gfEstimate('short',65000,100,0.0001,0.0001), 65000*100*0.0001*0.0001, 'short receives');
+  eq(gfEstimate('long',65000,100,0.0001,-0.0001), 65000*100*0.0001*0.0001, 'long negative receives');
+  eq(gfEstimate('short',65000,100,0.0001,-0.0001), -65000*100*0.0001*0.0001, 'short negative pays');
+  eq(gfEstimate('long',null,100,0.0001,0.0001), null, 'blank mark');
+  eq(gfEstimate('long',65000,0,0.0001,0.0001), null, 'zero size');
+  eq(gfContractsFromInput(0.01,'coin',0.0001), 100, 'coin');
+  eq(gfContractsFromInput(3,'contracts',0.0001), 3, 'zhang');
+  eq(gfContractsFromInput(-1,'contracts',0.0001), null, 'neg');
+  eq(gfContractsFromInput(1,'coin',0), null, 'no quanto');
+  eq(gfNormContract('btc'), 'BTC_USDT', 'append');
+  eq(gfNormContract('btc-usdt'), 'BTC_USDT', 'dash');
+  eq(gfNormContract('BTC_USD'), '', 'not usdt');
+  eq(gfNormContract('哈基米'), '哈基米_USDT', 'cn');
+  eq(gfAllowed('/futures/usdt/contracts'), true, 'list');
+  eq(gfAllowed('/futures/usdt/contracts/BTC_USDT'), true, 'one');
+  eq(gfAllowed('/futures/usdt/accounts'), false, 'no accounts');
+  eq(gfAllowed('/futures/usdt/positions'), false, 'no positions');
+  eq(gfAllowed('/futures/usdt/orders'), false, 'no orders');
+  eq(gfAllowed('/futures/usdt/funding_rate?contract=BTC_USDT&limit=1000'), true, 'fund');
+  eq(gfAllowed('/futures/usdt/funding_rate?contract=BTC_USDT&limit=1000&to=10'), true, 'page');
+  eq(gfAllowed('/futures/usdt/funding_rate?contract=BTC_USDT&limit=1000&offset=1'), false, 'no offset');
+  eq(gfAllowed('/futures/usdt/candlesticks?contract=mark_BTC_USDT&interval=1m&from=1&to=2'), true, 'mark');
+  eq(gfAllowed('/futures/usdt/candlesticks?contract=BTC_USDT&interval=1m&from=1&to=2'), false, 'trade candle');
+  eq(gfAllowed('/futures/usdt/contracts/'+encodeURIComponent('哈基米_USDT')), true, 'cn contract');
+  eq(gfAllowed('/futures/usdt/funding_rate?contract='+encodeURIComponent('哈基米_USDT')+'&limit=1000'), true, 'cn fund');
+  eq(gfAllowed('/futures/usdt/candlesticks?contract='+encodeURIComponent('mark_哈基米_USDT')+'&interval=1m&from=1&to=61'), true, 'cn mark');
+  const leg={id:'L1',contract:'BTC_USDT',side:'long',leverage:50,changes:[
+    {id:'a',t:1000,size:10},{id:'b',t:5000,size:4},{id:'c',t:8000,size:0}
+  ]};
+  eq(gfSizeAt(leg,999), 0, 'before open');
+  eq(gfSizeAt(leg,1000), 10, 'at open');
+  eq(gfSizeAt(leg,4999), 10, 'before change');
+  eq(gfSizeAt(leg,5000), 4, 'at change');
+  eq(gfSizeAt(leg,8000), 0, 'closed');
+  eq(gfNearSec(leg,5003), 3, 'near');
+  eq(gfNearSec(leg,5006), null, 'not near');
+  const history=[{t:5002,r:'0.0002'},{t:1500,r:'-0.0001'},{t:9000,r:'0.01'}];
+  const rows=gfBuildLegRows(leg, history, {1500:100,4980:200}, 0.01, 7.2, {});
+  eq(rows.length, 2, 'two stamps');
+  const byT={}; rows.forEach(r=>{ byT[r.t]=r; });
+  eq(byT[9000], undefined, 'skip flat');
+  eq(byT[5002]&&byT[5002].t, 5002, 'raw t');
+  eq(byT[5002].mark, 200, 'minute open');
+  eq(byT[5002].estimated, gfEstimate('long',200,4,0.01,0.0002), 'est');
+  eq(byT[5002].quanto, 0.01, 'quanto pin');
+  eq(byT[5002].rateUSDT, 7.2, 'fx pin');
+  eq(byT[5002].near, true, 'flag near');
+  eq(byT[1500].estimated, gfEstimate('long',100,10,0.01,-0.0001), 'neg rate');
+  eq(byT[1500].pnlCNY, roundMoney(byT[1500].estimated*7.2), 'cny');
+  const prevMap={}; rows.forEach(r=>{ prevMap[r.id]=r; });
+  const again=gfBuildLegRows(leg, [{t:1500,r:'-0.0001'}], {1500:999}, 9, 9.9, prevMap);
+  eq(again[0].mark, 100, 'keep mark');
+  eq(again[0].quanto, 0.01, 'keep quanto');
+  eq(again[0].rateUSDT, 7.2, 'keep fx');
+  eq(again[0].pnlCNY, byT[1500].pnlCNY, 'keep cny');
+  const moved=gfBuildLegRows(leg, [{t:1500,r:'-0.0002'}], {1500:100}, 0.01, 9.9, prevMap);
+  eq(moved[0].rateUSDT, 7.2, 'fx stays');
+  eq(moved[0].estimated, gfEstimate('long',100,10,0.01,-0.0002), 'est replaced');
+  eq(moved[0].pnlCNY, roundMoney(moved[0].estimated*7.2), 'cny from pinned fx');
+  if(moved[0].pnlCNY===roundMoney(moved[0].estimated*9.9)) errs.push('cny used live fx');
+  const withAct=Object.assign({}, byT[1500], {actual:0.5, pnlCNY:roundMoney(0.5*7.2)});
+  const prevA={}; prevA[withAct.id]=withAct;
+  const outA=gfBuildLegRows(leg, [{t:1500,r:'-0.0002'}], {1500:999}, 9, 9.9, prevA);
+  eq(outA[0].actual, 0.5, 'keep actual');
+  eq(outA[0].mark, 100, 'manual-or-candle mark stays');
+  eq(outA[0].estimated, gfEstimate('long',100,10,0.01,-0.0002), 'est still replaced');
+  eq(outA[0].pnlCNY, roundMoney(0.5*7.2), 'cny from actual');
+  const blank=gfBuildLegRows(leg, [{t:1500,r:'0.0001'}], {}, 0.01, 7, {});
+  eq(blank[0].mark, null, 'missing mark');
+  eq(blank[0].estimated, null, 'no invented estimate');
+  const gap=gfGap(leg, [{t:2000,r:0.1},{t:4000,r:0.1}]);
+  eq(gap&&gap.oldest, 2000, 'gap oldest');
+  eq(gap&&gap.openAt, 1000, 'gap open');
+  eq(gfGap(leg, [{t:500,r:0.1}]), null, 'no gap');
+  const open={id:'L2',contract:'BTC_USDT',side:'long',leverage:20,changes:[{id:'a',t:1000,size:100}]};
+  const view=gfOpenView(open, {mark:65000, quanto:0.0001, upcoming:0.9}, 8);
+  eq(view&&view.value, 65000*100*0.0001, 'notional ignores leverage');
+  eq(view&&view.cny, view.value*8, 'live cny');
+  const dups=gfBuildLegRows(open, [{t:2000,r:0.001},{t:2000,r:0.5}], {1980:10}, 1, 7, {});
+  eq(dups.length, 1, 'dedupe');
+  eq(dups[0].r, 0.001, 'first rate');
+  const leg2=JSON.parse(JSON.stringify(leg));
+  leg2.changes[1].size=2;
+  const touched=gfRetouchRow(byT[5002], leg2);
+  eq(touched.size, 2, 'retouch size');
+  eq(touched.r, byT[5002].r, 'retouch rate');
+  eq(touched.mark, byT[5002].mark, 'retouch mark');
+  eq(touched.estimated, gfEstimate('long', byT[5002].mark, 2, byT[5002].quanto, byT[5002].r), 'retouch est');
+  const sum=gfSummarize([
+    {excluded:false, actual:-0.002, estimated:-1, pnlCNY:roundMoney(-0.002*7.2)},
+    {excluded:false, actual:null, estimated:0.001, pnlCNY:roundMoney(0.001*7.2)},
+    {excluded:true, actual:null, estimated:5, pnlCNY:36}
+  ], [{amount:-1.5},{amount:0.2}]);
+  eq(sum.funding, -0.001, 'chosen');
+  eq(sum.fees, -1.3, 'fees');
+  eq(sum.net, sum.funding+sum.fees, 'net once');
+  eq(sum.actN, 1, 'act');
+  eq(sum.estN, 1, 'est');
+  eq(sum.excluded, 1, 'excluded');
+  eq(sum.fundingCny, roundMoney(-0.002*7.2)+roundMoney(0.001*7.2), 'cny sum');
+  eq(gfFundingLabel(sum), '有手工实际的按手工实际，其余为'+GF_EST_LABEL, 'mixed');
+  eq(gfFundingLabel({actN:0,estN:2}), GF_EST_LABEL, 'est label');
+  eq(gfFundingLabel({actN:2,estN:0}), '手工实际', 'act label');
+  const src=[gfEstimate,gfPositionValue,gfBuildLegRows,gfFetchHistory,gfRetouchRow,gfSummarize].map(f=>String(f)).join('\n');
+  if(/funding_interval|maker_fee|taker_fee|accounts\/|\/positions|secret|api[_-]?key/i.test(src)) errs.push('disallowed reference');
+  if(/leverage|upcoming|funding_next|funding_interval/.test(gfBuildLegRows.toString()+gfEstimate.toString()+gfPositionValue.toString())) errs.push('schedule or leverage in formula');
+  return errs;
+}
+
 function renderAll(){
   const inv=investValue(), debt=debtValue();
   const mix=assetTotals();
@@ -2637,6 +3526,7 @@ function renderAll(){
   renderGoal();
   renderBook();
   renderSpendCal();
+  renderGateFunding();
 }
 
 function renderAccounts(){
@@ -3438,7 +4328,7 @@ function importAll(ev){
   r.readAsText(f); ev.target.value='';
 }
 function clearAll(){ if(!confirm('确定清空全部数据？'))return;
-  S={accounts:[],ledger:[],positions:[],history:[],transfers:[],dca:[],debts:[],assetMonths:[],goalTarget:null,rates:S.rates,lastRefresh:null}; save(); renderAll(); toast('已清空'); }
+  S={accounts:[],ledger:[],positions:[],history:[],transfers:[],dca:[],debts:[],assetMonths:[],goalTarget:null,rates:S.rates,lastRefresh:null,gateFunding:[]}; save(); renderAll(); toast('已清空'); }
 
 // ===== 快捷记账 =====
 // sync.js 调用：把条目并入账本（按 qid 去重），返回新增记录
@@ -3505,13 +4395,13 @@ function switchTab(name){
 }
 document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>switchTab(t.dataset.t)));
 
-window.__am={classifyLocal,pickSuggest,parseHint,mapHit,confirmAsset,buildBookEvents,goalTargetOf,weekBounds,MILESTONES,isCnFundCode,fallbackGuess,confirmSix,isInvestAcc,idleCash,assetTotals,convertAmt,migrateInvestCash,fxCalcPnL,fxSummaryFromPayload,fxReadLocalSummary,normQuoteDate,sessionDateOf,marketKind,raw:()=>S};
+window.__am={classifyLocal,pickSuggest,parseHint,mapHit,confirmAsset,buildBookEvents,goalTargetOf,weekBounds,MILESTONES,isCnFundCode,fallbackGuess,confirmSix,isInvestAcc,idleCash,assetTotals,convertAmt,migrateInvestCash,fxCalcPnL,fxSummaryFromPayload,fxReadLocalSummary,normQuoteDate,sessionDateOf,marketKind,gfSelfCheck,raw:()=>S};
 load();
 handleUrlAdd();
 document.getElementById('ledDate').value=today();
 renderAll();
 if(location.hash==='#settings') switchTab('settings');
-fetchRates().then(()=>{ save(); renderRates(); });
+fetchRates().then(()=>{ save(); renderRates(); renderGateFunding(); });
 renderAutoU(); setTimeout(()=>autoDailyClose(),2500); setTimeout(()=>syncFx(),800); setTimeout(()=>refreshQuotes(false),500);
 </script>
 <script src="sync.js"></script>

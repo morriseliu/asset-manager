@@ -27,7 +27,7 @@
   function snapshot() { var o = {}; DATA_KEYS.forEach(function (k) { var v = g(k); if (v != null) o[k] = v; }); return o; }
   function hasData(data) {
     try { var m = JSON.parse(data['allin_finance_v1'] || '{}');
-      if ((m.accounts || []).length || ['ledger', 'positions', 'history', 'dca', 'debts'].some(function (x) { return (m[x] || []).length; })) return true;
+      if ((m.accounts || []).length || ['ledger', 'positions', 'history', 'dca', 'debts', 'gateFunding'].some(function (x) { return (m[x] || []).length; })) return true;
     } catch (e) {}
     return DATA_KEYS.slice(1).some(function (k) { return data[k] != null; });
   }
