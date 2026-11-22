@@ -1,6 +1,6 @@
 // 全能资产管家 service worker: app shell cache-first, price/rate APIs network-only.
 const PREFIX = 'asset-manager-';
-const CACHE = PREFIX + 'v23'; // v23：投资页的合约交易日记
+const CACHE = PREFIX + 'v24'; // v24：已结算资金费会补记到持仓；浮盈亏仍不进当日收益
 const CHART_JS = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js';
 const SHELL = [
   './',
@@ -44,7 +44,7 @@ self.addEventListener('fetch', event => {
       const page = /\/quick\.html$/.test(url.pathname) ? './quick.html' : './index.html';
       event.respondWith((async () => {
         try {
-          const res = await fetch(req);
+          const res = await fetch(req, { cache: 'no-store' });
           if (res.ok) (await caches.open(CACHE)).put(page, res.clone());
           return res;
         } catch (e) {

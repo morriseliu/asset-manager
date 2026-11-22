@@ -502,7 +502,7 @@
             <button type="button" class="btn-sm" id="gfRefreshBtn" onclick="gfRefresh()">同步资金费</button>
           </span>
         </div>
-        <p class="hint" style="margin:0 0 8px">USDT 永续，只读公开行情。未平仓名义不计入总资产。点「记录平仓」后，价差、资金费和手续费合成一笔净盈亏记入当日收益，只记一次，也不会向交易所下单。</p>
+        <p class="hint" style="margin:0 0 8px">USDT 永续，只读公开行情。未平仓名义不计入总资产。持仓浮盈亏不记入今日收益。点「记录平仓」后，价差、资金费和手续费合成一笔净盈亏，记入平仓当天，只记一次，也不会向交易所下单。</p>
         <div id="gateBody"></div>
       </div>
     </div>
@@ -647,7 +647,7 @@
           • 投资账户 = 持仓市值 + 闲钱。买入、加仓、定投从闲钱扣，卖出、减仓、清仓回到闲钱；闲钱可与银行卡等账户互转（只能转出闲钱）。互转记在明细账本，不算收入、支出，也不算投资盈亏<br>
           • 外汇交易账户可绑定交易复盘：余额自动等于复盘账户（美元），每日盈亏记入账本和盈亏统计，入金出金按转账处理<br>
           • 每天北京时间 6:00 后打开 App，自动记录上一交易日收盘盈亏；今日盈亏 = 数量 ×（现价 − 前收盘价）。美股在北京时间次日 06:00 前仍算同一个交易日；休市日记 0。打开应用和回到前台会自动刷新行情<br>
-          • 合约在「投资 → 合约」手工记账：公开行情算价差和资金费，记录平仓后净盈亏记入当日收益；未平仓名义不计入总资产<br>
+          • 合约在「投资 → 合约」手工记账：公开行情算价差和资金费。持仓浮盈亏不记入今日收益；记录平仓后，价差、资金费和手续费合成一笔净盈亏，记入平仓当天，只记一次。未平仓名义不计入总资产<br>
           • 数据默认存在本机浏览器；在「我的 → 设置 → 多设备同步」开启后，也会保存到你自己的 GitHub 私密 Gist
         </p>
       </div>
@@ -2665,6 +2665,7 @@ const GF_EST_LABEL = '估计（公开费率 × 标记价近似 × 手工仓位�
 const GF_NEAR_SEC = 5;
 const GF_SHOW = 6;
 let gfBusy = false, gfStatusText = '', gfNameList = null, gfNameP = null, gfMore = {};
+let gfJob = null, gfAutoStop = false, gfAutoErr = '', gfAutoN = 0;
 
 function gfEnsure(){ if(!Array.isArray(S.gateFunding)) S.gateFunding=[]; return S.gateFunding; }
 function gfLegs(){ return gfEnsure().filter(x=>x&&x.kind==='leg'); }
@@ -3135,29 +3136,86 @@ function gfSetMark(id, raw){
 }
 function gfToggleRow(id){ const row=gfRows().find(r=>r.id===id); if(!row) return; row.excluded=!row.excluded; save(); renderAll(); }
 function gfToggleMore(id){ gfMore[id]=!gfMore[id]; renderGateFunding(); }
-async function gfFetchHistory(contract, sinceSec, session){
-  const out=[], seen={};
-  let to=null;
-  for(let page=0; page<20; page++){
-    let path='/futures/usdt/funding_rate?contract='+encodeURIComponent(contract)+'&limit=1000';
-    if(to!=null) path+='&to='+to;
-    const rows=await gfGet(path, session);
-    if(!Array.isArray(rows) || !rows.length) break;
-    let oldest=null;
-    rows.forEach(row=>{
-      const t=+row.t;
-      if(!isFinite(t) || row.r==null || row.r==='' || !isFinite(+row.r)) return;
-      if(oldest==null || t<oldest) oldest=t;
-      if(!seen[t]){ seen[t]=1; out.push({t, r:+row.r}); }
-    });
-    if(oldest==null) break;
-    if(sinceSec!=null && isFinite(sinceSec) && oldest<=sinceSec) break;
-    const next=oldest-1;
-    if(to!=null && next>=to) break;
-    to=next;
+function gfNewHistoryFold(){ return {rows:[], seen:{}, to:null, done:false}; }
+function gfFoldHistoryPage(acc, batch, sinceSec){
+  if(!acc || acc.done) return acc;
+  if(!Array.isArray(batch) || !batch.length){ acc.done=true; return acc; }
+  let oldest=null;
+  batch.forEach(row=>{
+    const t=+row.t;
+    if(!isFinite(t) || row==null || row.r==null || row.r==='' || !isFinite(+row.r)) return;
+    if(oldest==null || t<oldest) oldest=t;
+    if(!acc.seen[t]){ acc.seen[t]=1; acc.rows.push({t, r:+row.r}); }
+  });
+  if(oldest==null){ acc.done=true; return acc; }
+  if(sinceSec!=null && isFinite(+sinceSec) && oldest<=+sinceSec){ acc.done=true; return acc; }
+  const next=oldest-1;
+  if(acc.to!=null && next>=acc.to){ acc.done=true; return acc; }
+  acc.to=next;
+  return acc;
+}
+function gfFundingDue(meta, openLegs, nowMs, reason){
+  if(!openLegs || !openLegs.length) return false;
+  const last=meta&&isFinite(+meta.at)?+meta.at:0;
+  const nowSec=Math.floor(+nowMs/1000);
+  if(!(last>0)) return true;
+  if(gfShDate(last/1000)!==gfShDate(nowSec)) return true;
+  const specs=(meta&&meta.specs)||{};
+  for(let i=0;i<openLegs.length;i++){
+    const leg=openLegs[i];
+    const spec=leg&&specs[leg.contract];
+    const next=spec&&+spec.next;
+    if(next>0 && next<=nowSec && last<next*1000) return true;
   }
-  out.sort((a,b)=>b.t-a.t);
-  return out;
+  if(reason==='open'||reason==='visible'||reason==='tab') return (+nowMs-last)>=15*60*1000;
+  if(reason==='poll') return (+nowMs-last)>=60*60*1000;
+  return false;
+}
+function gfOpenLegs(nowSec){
+  const t=nowSec==null?Math.floor(Date.now()/1000):nowSec;
+  return gfLegs().filter(l=>gfHeldSize(l, t)>0 && !gfCloseByLeg(l.id));
+}
+function gfAssembleFunding(legs, historyByContract, marksByContract, quantoByContract, rateNow, prevRows){
+  const prevById={};
+  (prevRows||[]).forEach(r=>{ if(r&&r.id) prevById[r.id]=r; });
+  const built=[], builtIds={}, gaps=[];
+  const groups={};
+  (legs||[]).forEach(l=>{ if(l&&l.contract) (groups[l.contract]=groups[l.contract]||[]).push(l); });
+  Object.keys(groups).forEach(contract=>{
+    const history=(historyByContract&&historyByContract[contract])||[];
+    const quanto=quantoByContract?quantoByContract[contract]:null;
+    const opens=(marksByContract&&marksByContract[contract])||{};
+    if(!history.length){
+      groups[contract].forEach(leg=>{ const ch=gfChanges(leg); if(ch.length) gaps.push({contract, openAt:+ch[0].t, oldest:null, empty:true}); });
+    }else{
+      groups[contract].forEach(leg=>{ const g=gfGap(leg, history); if(g) gaps.push(g); });
+    }
+    groups[contract].forEach(leg=>{
+      gfBuildLegRows(leg, history, opens, quanto, rateNow, prevById).forEach(r=>{ built.push(r); builtIds[r.id]=1; });
+    });
+  });
+  const kept=[];
+  (prevRows||[]).forEach(prev=>{
+    if(!prev || builtIds[prev.id]) return;
+    const leg=(legs||[]).find(l=>l.id===prev.legId);
+    if(!leg) return;
+    const row=gfRetouchRow(prev, leg);
+    if(row) kept.push(row);
+  });
+  let added=0;
+  built.forEach(r=>{ if(!prevById[r.id]) added++; });
+  return {rows:kept.concat(built), gaps, added};
+}
+async function gfFetchHistory(contract, sinceSec, session){
+  const acc=gfNewHistoryFold();
+  for(let page=0; page<20 && !acc.done; page++){
+    let path='/futures/usdt/funding_rate?contract='+encodeURIComponent(contract)+'&limit=1000';
+    if(acc.to!=null) path+='&to='+acc.to;
+    const rows=await gfGet(path, session);
+    gfFoldHistoryPage(acc, rows, sinceSec);
+  }
+  acc.rows.sort((a,b)=>b.t-a.t);
+  return acc.rows;
 }
 async function gfFetchMarks(contract, minutes, session){
   const uniq=Array.from(new Set(minutes)).filter(t=>isFinite(t)).sort((a,b)=>a-b);
@@ -3184,10 +3242,40 @@ async function gfFetchMarks(contract, minutes, session){
   }
   return opens;
 }
-async function gfRefresh(){
-  if(gfBusy){ toast('正在刷新'); return; }
+function gfRefresh(opts){
+  opts=opts||{};
+  if(gfJob){
+    if(!opts.auto) gfJob.manual=true;
+    if(!opts.quiet) gfJob.quiet=false;
+    gfJob.again=true;
+    if(!opts.auto && !opts.quiet) toast('正在同步，这一轮结束后会再对一次');
+    return gfJob.promise;
+  }
+  const state={manual:!opts.auto, quiet:!!opts.quiet, again:false, promise:null};
+  state.promise=(async()=>{
+    let last=null;
+    try{
+      do{
+        state.again=false;
+        last=await gfRefreshBody({auto:!state.manual, quiet:!!state.quiet});
+      }while(state.again && (state.manual || !gfAutoStop));
+      return last;
+    }finally{
+      if(gfJob===state) gfJob=null;
+    }
+  })();
+  gfJob=state;
+  return state.promise;
+}
+async function gfRefreshBody(opts){
+  opts=opts||{};
+  if(opts.auto && gfAutoStop) return {ok:false, stopped:true};
+  const manual=!opts.auto;
   const legs=gfLegs();
-  if(!legs.length){ toast('先记一笔仓位'); return; }
+  if(!legs.length){
+    if(manual && !opts.quiet) toast('先记一笔仓位');
+    return {ok:false, empty:true};
+  }
   gfBusy=true;
   const btn=document.getElementById('gfRefreshBtn'); if(btn) btn.disabled=true;
   gfStatusText='正在读取公开已结算费率…';
@@ -3198,11 +3286,8 @@ async function gfRefresh(){
     const rateNow=+(S.rates&&S.rates.USDT)||7.15;
     const groups={};
     legs.forEach(l=>{ (groups[l.contract]=groups[l.contract]||[]).push(l); });
-    const prevById={};
-    gfRows().forEach(r=>{ prevById[r.id]=r; });
-    const built=[], builtIds={};
-    const gaps=[];
-    const specs={};
+    const prevRows=gfRows();
+    const historyBy={}, marksBy={}, quantoBy={}, specs={};
     for(const contract of Object.keys(groups)){
       gfStatusText='正在读取 '+contract+' …';
       renderGateFunding();
@@ -3213,55 +3298,64 @@ async function gfRefresh(){
       const times=[];
       groups[contract].forEach(leg=>{ const ch=gfChanges(leg); if(ch.length) times.push(+ch[0].t); });
       const earliest=times.length?Math.min.apply(null, times):null;
-      const history=await gfFetchHistory(contract, earliest, session);
-      if(!history.length){
-        groups[contract].forEach(leg=>{ const ch=gfChanges(leg); if(ch.length) gaps.push({contract, openAt:+ch[0].t, oldest:null, empty:true}); });
-      } else {
-        groups[contract].forEach(leg=>{ const g=gfGap(leg, history); if(g) gaps.push(g); });
-      }
+      // 已结算行只用历史费率。当前 funding_rate 只留给「预计下一期」，不回填过去。
+      historyBy[contract]=await gfFetchHistory(contract, earliest, session);
       const minutes=[];
       groups[contract].forEach(leg=>{
-        history.forEach(h=>{
+        historyBy[contract].forEach(h=>{
           if(!(gfSizeAt(leg, h.t)>0)) return;
-          const prev=prevById[leg.id+':'+h.t];
+          const prev=prevRows.find(r=>r.id===leg.id+':'+h.t);
           if(prev && prev.mark!=null && isFinite(+prev.mark) && +prev.mark>0) return;
           minutes.push(Math.floor(h.t/60)*60);
         });
       });
-      let opens={};
-      if(minutes.length) opens=await gfFetchMarks(contract, minutes, session);
-      groups[contract].forEach(leg=>{
-        gfBuildLegRows(leg, history, opens, quanto, rateNow, prevById).forEach(r=>{ built.push(r); builtIds[r.id]=1; });
-      });
+      marksBy[contract]=minutes.length?await gfFetchMarks(contract, minutes, session):{};
+      quantoBy[contract]=quanto;
     }
-    const kept=[];
-    gfRows().forEach(prev=>{
-      if(builtIds[prev.id]) return;
-      const leg=legs.find(l=>l.id===prev.legId);
-      if(!leg) return;
-      const row=gfRetouchRow(prev, leg);
-      if(row) kept.push(row);
-    });
+    const assembled=gfAssembleFunding(legs, historyBy, marksBy, quantoBy, rateNow, prevRows);
     const rest=gfEnsure().filter(x=>x&&x.kind!=='row'&&x.kind!=='meta');
-    S.gateFunding=rest.concat(kept, built, [{kind:'meta', at:Date.now(), error:'', gaps, specs}]);
+    S.gateFunding=rest.concat(assembled.rows, [{kind:'meta', at:Date.now(), error:'', gaps:assembled.gaps, specs}]);
     gfStatusText='';
+    gfAutoErr=''; gfAutoN=0; gfAutoStop=false;
     save(); renderAll();
-    const miss=kept.concat(built).filter(r=>!r.excluded && !gfHasActual(r) && r.estimated==null).length;
-    toast(miss?('估算已更新，还有 '+miss+' 笔缺标记价'):'资金费估算已更新');
+    const miss=assembled.rows.filter(r=>!r.excluded && !gfHasActual(r) && r.estimated==null).length;
+    if(!opts.quiet){
+      if(opts.auto){
+        if(assembled.added>0) toast('已补记 '+assembled.added+' 笔已结算资金费。这是公开历史估算，不是交易所账单');
+      }else toast(miss?('估算已更新，还有 '+miss+' 笔缺标记价'):'资金费估算已更新');
+    }
+    return {ok:true, added:assembled.added, missing:miss};
   }catch(e){
     const msg=(e&&e.message)||'刷新失败';
     gfStatusText='';
+    if(opts.auto){
+      if(msg===gfAutoErr) gfAutoN++; else { gfAutoErr=msg; gfAutoN=1; }
+      if(gfAutoN>=2) gfAutoStop=true;
+    }
     const prev=gfMeta();
     const rest=gfEnsure().filter(x=>!x || x.kind!=='meta');
     rest.push(Object.assign({}, prev, {kind:'meta', error:msg}));
     S.gateFunding=rest;
     save(); renderAll();
-    toast('刷新失败，已保留上次估算：'+msg);
+    if(!opts.quiet){
+      toast((gfAutoStop&&opts.auto)
+        ? ('自动同步已暂停：'+msg+'。已保留上次估算，可点「同步资金费」再试')
+        : ('刷新失败，已保留上次估算：'+msg));
+    }
+    return {ok:false, error:msg, stopped:!!(opts.auto&&gfAutoStop)};
   }finally{
     gfBusy=false; gfStatusText='';
     const b=document.getElementById('gfRefreshBtn'); if(b) b.disabled=false;
     renderGateFunding();
   }
+}
+function gfSyncIfDue(reason){
+  if(typeof navigator!=='undefined' && navigator.onLine===false) return;
+  if(typeof document!=='undefined' && document.visibilityState==='hidden') return;
+  if(gfAutoStop) return;
+  const open=gfOpenLegs();
+  if(!gfFundingDue(gfMeta(), open, Date.now(), reason)) return;
+  return gfRefresh({auto:true});
 }
 function gfChangeLabel(ch, i){ if(!(+ch.size>0)) return '平仓'; return i===0?'开仓':'改数量'; }
 function gfSizeText(ch){
@@ -3342,6 +3436,7 @@ function gfLegFees(leg){
 }
 function gfCloses(){ return gfEnsure().filter(x=>x && x.kind==='close' && x.id); }
 function gfCloseByLeg(legId){ return gfCloses().find(c=>c.legId===legId)||null; }
+// 当日收益只认已记录的平仓净额（价差 + 资金费 + 手续费，一笔）。持仓浮盈亏、未平仓资金费行都不进这里。
 function gfDayMap(){
   const m={};
   gfCloses().forEach(c=>{
@@ -3448,13 +3543,17 @@ async function gfCommitClose(){
   const adjS=document.getElementById('gfFundAdj').value.trim();
   const feeN=feeS===''?0:+feeS, adjN=adjS===''?0:+adjS;
   if(!isFinite(feeN)||!isFinite(adjN)){ toast('手续费和资金费修正要是数字'); return; }
+  const synced=await gfRefresh({auto:false, quiet:true});
   const prev=gfCloseByLeg(leg.id);
   const rec=gfBuildClose(leg, exit, t, feeN, adjN, prev);
   if(!rec){ toast('数量或开仓价不完整，这笔不计入盈亏'); return; }
   gfApplyClose(leg, rec);
   closeM('gfModal');
   save(); renderAll();
-  toast(rec.pnlCNY==null?('已记录净盈亏 '+gfFmtU(rec.netUSDT)+'，汇率还没锁定'):('已记入 '+rec.date+' 的收益 '+fmtP(rec.pnlCNY)+' 元'));
+  let note=rec.pnlCNY==null?('已记录净盈亏 '+gfFmtU(rec.netUSDT)+'，汇率还没锁定'):('已记入 '+rec.date+' 的收益 '+fmtP(rec.pnlCNY)+' 元');
+  if(rec.missingFunding) note+='。有 '+rec.missingFunding+' 笔资金费没有标记价，没算进这笔';
+  if(synced && synced.ok===false && synced.error) note+='。资金费没同步上，先按已保存的累计';
+  toast(note);
 }
 let gfPollTimer=null;
 function gfStartPoll(){
@@ -3487,6 +3586,7 @@ async function gfPollQuotes(){
   if(err) meta.quoteErr=err;
   else { meta.quoteErr=''; meta.quoteAt=Date.now(); }
   renderGateFunding();
+  gfSyncIfDue('poll');
 }
 
 function renderGateFunding(){
@@ -3519,6 +3619,7 @@ function renderGateFunding(){
   html+=qErr+qAt;
   const todayNet=gfTodayCNY();
   if(todayNet!=null) html+=`<p class="hint">今日已记入收益的合约平仓 ${fmtP(todayNet)} 元。这是价差、资金费和手续费合成的一笔，日历里同一笔不会再加一次。</p>`;
+  if(legs.some(l=>gfHeldSize(l)>0 && !gfCloseByLeg(l.id))) html+=`<p class="hint">持仓浮盈亏和已累计资金费只显示在这张卡片上，不记入今日收益。记录平仓后才把价差、资金费和手续费合成一笔，记入平仓当天。</p>`;
   if(sum.missing) html+=`<p class="hint">还有 ${sum.missing} 笔资金费没有标记价，未计入。可在该行手填。</p>`;
   const dup={};
   legs.forEach(l=>{ if(gfSizeAt(l, now)>0) dup[l.contract]=(dup[l.contract]||0)+1; });
@@ -3701,7 +3802,7 @@ function gfSelfCheck(){
   eq(gfFundingLabel(sum), '有手工实际的按手工实际，其余为'+GF_EST_LABEL, 'mixed');
   eq(gfFundingLabel({actN:0,estN:2}), GF_EST_LABEL, 'est label');
   eq(gfFundingLabel({actN:2,estN:0}), '手工实际', 'act label');
-  const src=[gfEstimate,gfPositionValue,gfBuildLegRows,gfFetchHistory,gfRetouchRow,gfSummarize].map(f=>String(f)).join('\n');
+  const src=[gfEstimate,gfPositionValue,gfBuildLegRows,gfFetchHistory,gfRetouchRow,gfSummarize,gfAssembleFunding,gfFoldHistoryPage,gfFundingDue,gfRefreshBody].map(f=>String(f)).join('\n');
   if(/funding_interval|maker_fee|taker_fee|accounts\/|\/positions|secret|api[_-]?key/i.test(src)) errs.push('disallowed reference');
   if(/leverage|upcoming|funding_next|funding_interval/.test(gfBuildLegRows.toString()+gfEstimate.toString()+gfPositionValue.toString())) errs.push('schedule or leverage in formula');
   eq(gfPricePnl('long',100,110,2), 20, 'long price');
@@ -3749,6 +3850,134 @@ function gfSelfCheck(){
   S.gateFunding=S.gateFunding.filter(x=>!(x&&x.kind==='close'&&x.legId==='S1'));
   eq((gfDayMap()[srec.date]||0), dayBefore-(srec.pnlCNY||0), 'delete reverses');
   S.gateFunding=JSON.parse(snapGF);
+  const snapDay=JSON.stringify(S.gateFunding||[]);
+  const snapRates=JSON.stringify(S.rates||{});
+  try{
+    const bj=(y,m,d,h,mi,s)=>Math.round(Date.UTC(y,m-1,d,h-8,mi||0,s||0)/1000);
+    const openT=bj(2026,11,20,4,55,10);
+    const s0=bj(2026,11,20,8,0,0);
+    const s1=bj(2026,11,22,0,0,0);
+    const before=bj(2026,11,19,16,0,0);
+    const legQ={kind:'leg', id:'Q1', contract:'QQQ_USDT', side:'long', leverage:2, entryPrice:648.72, changes:[{id:'c', t:openT, size:226, quanto:0.01}]};
+    const hist={QQQ_USDT:[{t:before, r:0.01},{t:s0, r:'0'},{t:s1, r:'0.0003356'}]};
+    const minute=t=>Math.floor(t/60)*60;
+    const marks={QQQ_USDT:{}};
+    marks.QQQ_USDT[minute(s0)]=644.83;
+    marks.QQQ_USDT[minute(s1)]=622.8;
+    const a1=gfAssembleFunding([legQ], hist, marks, {QQQ_USDT:0.01}, 7.2, []);
+    eq(a1.rows.length, 2, 'skip pre-open');
+    eq(a1.added, 2, 'added');
+    const z=a1.rows.find(r=>r.t===s0), nz=a1.rows.find(r=>r.t===s1);
+    eq(z.estimated, 0, 'zero rate kept');
+    eq(z.r, 0, 'zero rate value');
+    eq(nz.r, 0.0003356, 'historical rate not current');
+    eq(nz.estimated, -622.8*226*0.01*0.0003356, 'qqq units ignore 2x');
+    const a2=gfAssembleFunding([legQ], hist, {QQQ_USDT:{}}, {QQQ_USDT:0.01}, 9.9, a1.rows);
+    eq(a2.rows.length, 2, 'resync no dup');
+    eq(a2.added, 0, 'resync adds none');
+    eq(a2.rows.find(r=>r.t===s1).estimated, nz.estimated, 'resync same est');
+    eq(a2.rows.find(r=>r.t===s1).rateUSDT, 7.2, 'fx locked');
+    eq(a2.rows.find(r=>r.t===s1).mark, 622.8, 'mark locked');
+    const blank=gfAssembleFunding([legQ], {QQQ_USDT:[{t:s1, r:0.0003356}]}, {QQQ_USDT:{}}, {QQQ_USDT:0.01}, 7.2, []);
+    eq(blank.rows[0].estimated, null, 'no current mark fill');
+    const withAct=a1.rows.map(r=>r.t===s1?Object.assign({}, r, {actual:-0.5, pnlCNY:roundMoney(-0.5*7.2), excluded:false}):r);
+    const a3=gfAssembleFunding([legQ], hist, marks, {QQQ_USDT:99}, 9, withAct);
+    eq(a3.rows.find(r=>r.t===s1).actual, -0.5, 'keep actual');
+    eq(a3.rows.find(r=>r.t===s1).quanto, 0.01, 'keep quanto');
+    eq(gfSummarize(a3.rows, []).funding, -0.5, 'actual not plus est');
+    const ex=a1.rows.map(r=>r.t===s0?Object.assign({}, r, {excluded:true}):r);
+    eq(gfAssembleFunding([legQ], hist, marks, {QQQ_USDT:0.01}, 7.2, ex).rows.find(r=>r.t===s0).excluded, true, 'keep excluded');
+    const orphan={kind:'row', id:'Q1:1', legId:'Q1', t:openT+10, r:0.2, size:226, quanto:0.01, mark:1, estimated:-1, actual:-0.2, rateUSDT:7.2, pnlCNY:roundMoney(-0.2*7.2), excluded:false};
+    const a4=gfAssembleFunding([legQ], hist, marks, {QQQ_USDT:0.01}, 7.2, a1.rows.concat([orphan]));
+    eq(a4.rows.filter(r=>r.id==='Q1:1').length, 1, 'manual row kept once');
+    const closeT=bj(2026,11,22,10,0,0);
+    const s2=bj(2026,11,22,16,0,0);
+    const flat={kind:'leg', id:'Q1', contract:'QQQ_USDT', side:'long', leverage:2, entryPrice:648.72, changes:[{id:'c', t:openT, size:226, quanto:0.01},{id:'z', t:closeT, size:0, source:'close'}]};
+    const marksFlat={QQQ_USDT:Object.assign({}, marks.QQQ_USDT, {[minute(s2)]:620})};
+    const afterFlat=gfAssembleFunding([flat], {QQQ_USDT:hist.QQQ_USDT.concat([{t:s2, r:'0.0001'},{t:closeT, r:'0.0002'}])}, marksFlat, {QQQ_USDT:0.01}, 7.2, []);
+    eq(afterFlat.rows.some(r=>r.t===s2), false, 'no funding after flat');
+    eq(afterFlat.rows.some(r=>r.t===closeT), false, 'flat at settlement excluded');
+    eq(afterFlat.rows.some(r=>r.t===s1), true, 'funding before flat');
+    eq(afterFlat.rows.some(r=>r.t===s0), true, 'earlier funding kept');
+    const atOpen=bj(2026,11,20,8,0,0);
+    const edge={id:'E', contract:'QQQ_USDT', side:'short', changes:[{t:atOpen, size:10, quanto:0.01}]};
+    const edgeRows=gfAssembleFunding([edge], {QQQ_USDT:[{t:atOpen, r:0.0001},{t:atOpen-1, r:0.0002}]}, {QQQ_USDT:{[minute(atOpen)]:100}}, {QQQ_USDT:0.01}, 7, []);
+    eq(edgeRows.rows.length, 1, 'exact open in, tick before out');
+    eq(edgeRows.rows[0].estimated, 100*10*0.01*0.0001, 'short receives');
+    S.gateFunding=[legQ].concat(a3.rows);
+    S.rates=Object.assign({}, S.rates, {USDT:7.2});
+    const floating=gfPricePnl('long', 648.72, 623.54, 2.26);
+    eq(Math.abs(floating-(623.54-648.72)*2.26)<1e-8, true, 'floating exists');
+    eq(Object.keys(gfDayMap()).length, 0, 'open rows not income');
+    eq(gfTodayCNY(), null, 'floating not today');
+    eq(gfCumCNY(), 0, 'floating not cum');
+    eq(buildBookEvents().filter(e=>e.filter==='perp').length, 0, 'open not in book');
+    const assetsOpen=assetTotals().assets;
+    S.gateFunding=[];
+    eq(assetTotals().assets, assetsOpen, 'notional not in assets');
+    S.gateFunding=[legQ].concat(a3.rows, [{kind:'fee', id:'feeQ', legId:'Q1', t:s0, amount:-1}]);
+    const rec=gfBuildClose(legQ, 623.54, closeT, -0.25, 0.1, null);
+    eq(rec.date, '2026-11-22', 'close beijing day');
+    eq(rec.baseQty, 2.26, 'coin qty');
+    eq(rec.grossUSDT, (623.54-648.72)*2.26, 'price once');
+    eq(rec.fundingUSDT, -0.4, 'actual plus adj once');
+    eq(rec.feesUSDT, -1.25, 'fees once');
+    eq(rec.netUSDT, rec.grossUSDT+rec.fundingUSDT+rec.feesUSDT, 'net parts once');
+    gfUpsertClose(rec);
+    gfUpsertClose(Object.assign({}, rec, {exitPrice:rec.exitPrice}));
+    eq(gfCloses().length, 1, 'close stored once');
+    eq(gfDayMap()['2026-11-22'], rec.pnlCNY, 'close day once');
+    eq(gfDayMap()['2026-11-20'], undefined, 'funding day not booked');
+    eq(gfCumCNY(), rec.pnlCNY, 'cum is that one close');
+    const booked=JSON.stringify(gfCloses());
+    const again=gfAssembleFunding([legQ], hist, marks, {QQQ_USDT:0.01}, 7.2, gfRows());
+    const rest=gfEnsure().filter(x=>x&&x.kind!=='row'&&x.kind!=='meta');
+    S.gateFunding=rest.concat(again.rows, [{kind:'meta', at:Date.now(), error:'', gaps:[], specs:{}}]);
+    eq(JSON.stringify(gfCloses()), booked, 'sync does not rewrite close');
+    eq(gfDayMap()['2026-11-22'], rec.pnlCNY, 'day still once after sync');
+    const book=buildBookEvents().filter(e=>e.filter==='perp');
+    eq(book.length, 1, 'one book close');
+    eq(book[0].date, '2026-11-22', 'book on close day');
+    eq(book[0].amount, rec.pnlCNY, 'book amount once');
+    S.gateFunding=S.gateFunding.filter(x=>!(x&&x.kind==='close'));
+    eq(gfDayMap()['2026-11-22'], undefined, 'delete close drops income');
+    eq(gfRows().some(r=>r.actual===-0.5), true, 'rows survive delete');
+    eq(gfTodayCNY(), null, 'delete leaves floating out');
+    const fold=gfNewHistoryFold();
+    gfFoldHistoryPage(fold, [{t:300, r:'0.2'},{t:200, r:'0'}], 150);
+    eq(fold.done, false, 'page continues');
+    eq(fold.to, 199, 'next to');
+    gfFoldHistoryPage(fold, [{t:200, r:'0'},{t:100, r:'0.1'}], 150);
+    eq(fold.done, true, 'stops at open');
+    eq(fold.rows.length, 3, 'deduped pages');
+    eq(fold.rows.filter(r=>r.t===200).length, 1, 'overlap once');
+    const stuck=gfNewHistoryFold();
+    gfFoldHistoryPage(stuck, [{t:300, r:1},{t:200, r:1}], 0);
+    gfFoldHistoryPage(stuck, [{t:300, r:1},{t:200, r:1}], 0);
+    eq(stuck.done, true, 'ignored to stops');
+    eq(stuck.rows.length, 2, 'stuck page once');
+    const session={errs:{}};
+    let stopped=false;
+    try{ gfHitErr(session, '/futures/usdt/funding_rate', 'HTTP 500'); }catch(e){ stopped=true; }
+    eq(stopped, false, 'first error continues');
+    try{ gfHitErr(session, '/futures/usdt/funding_rate', 'HTTP 500'); stopped=false; }catch(e){ stopped=!!(e&&e.stop); }
+    eq(stopped, true, 'second identical stops');
+    const nowMs=Date.UTC(2026,10,22,2,18,0);
+    const staleAt=Date.UTC(2026,10,19,21,10,0);
+    const openLeg=[{contract:'QQQ_USDT'}];
+    eq(gfFundingDue({at:null, specs:{}}, openLeg, nowMs, 'poll'), true, 'never synced');
+    eq(gfFundingDue({at:staleAt, specs:{}}, openLeg, nowMs, 'poll'), true, 'cross day due');
+    eq(gfFundingDue({at:nowMs-5*60*1000, specs:{}}, openLeg, nowMs, 'poll'), false, 'recent poll waits');
+    eq(gfFundingDue({at:nowMs-5*60*1000, specs:{QQQ_USDT:{next:Math.floor(nowMs/1000)-10}}}, openLeg, nowMs, 'poll'), true, 'settlement passed');
+    eq(gfFundingDue({at:nowMs-20*60*1000, specs:{}}, openLeg, nowMs, 'open'), true, 'reopen after 15m');
+    eq(gfFundingDue({at:nowMs-5*60*1000, specs:{}}, openLeg, nowMs, 'open'), false, 'fresh reopen skips');
+    eq(gfFundingDue({at:null, specs:{}}, [], nowMs, 'open'), false, 'flat skips');
+    const daySrc=[renderAll, renderWeek, showDay, buildBookEvents, renderCal, assetTotals, renderInvest].map(fn=>String(fn)).join('\n');
+    if(/gfPricePnl|gfLegFunding|upnl/.test(daySrc)) errs.push('open perp mixed into day income');
+  }finally{
+    S.gateFunding=JSON.parse(snapDay);
+    S.rates=JSON.parse(snapRates);
+  }
   return errs;
 }
 
@@ -4724,6 +4953,8 @@ if(location.hash==='#settings') switchTab('settings');
 if(location.hash==='#perp'){ switchTab('invest'); setInvestSub('perp'); }
 gfStartPoll();
 setTimeout(()=>gfPollQuotes(), 900);
+document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible') gfSyncIfDue('visible'); });
+window.addEventListener('pageshow', ()=>gfSyncIfDue('open'));
 fetchRates().then(()=>{ save(); renderRates(); renderGateFunding(); });
 renderAutoU(); setTimeout(()=>autoDailyClose(),2500); setTimeout(()=>syncFx(),800); setTimeout(()=>refreshQuotes(false),500);
 </script>
