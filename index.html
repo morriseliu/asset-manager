@@ -3458,7 +3458,7 @@ function gfCloseView(leg){
   const rec=leg&&gfCloseByLeg(leg.id);
   if(!rec) return null;
   const priced=+rec.exitPrice>0 && rec.grossUSDT!=null && isFinite(+rec.grossUSDT);
-  return {priced, gross:priced?+rec.grossUSDT:null, net:(rec.netUSDT!=null&&isFinite(+rec.netUSDT))?+rec.netUSDT:null, rate:+rec.rateUSDT>0?+rec.rateUSDT:null, pnlCNY:(rec.pnlCNY!=null&&isFinite(+rec.pnlCNY))?+rec.pnlCNY:null};
+  return {priced, exit:+rec.exitPrice>0?+rec.exitPrice:null, gross:priced?+rec.grossUSDT:null, funding:(rec.fundingUSDT!=null&&isFinite(+rec.fundingUSDT))?+rec.fundingUSDT:null, net:(rec.netUSDT!=null&&isFinite(+rec.netUSDT))?+rec.netUSDT:null, rate:+rec.rateUSDT>0?+rec.rateUSDT:null, pnlCNY:(rec.pnlCNY!=null&&isFinite(+rec.pnlCNY))?+rec.pnlCNY:null};
 }
 // 当日收益只认已记录的平仓净额（价差 + 资金费 + 手续费，一笔）。持仓浮盈亏、未平仓资金费行都不进这里。
 function gfDayMap(){
@@ -3590,7 +3590,7 @@ async function gfPollQuotes(){
     renderGateFunding(); return;
   }
   const open=gfLegs().filter(l=>gfHeldSize(l)>0 && !gfCloseByLeg(l.id));
-  if(!open.length) return;
+  if(!open.length){ const meta0=gfMeta(); if(meta0.quoteErr) meta0.quoteErr=''; renderGateFunding(); return; }
   const session={errs:{}};
   const specs=Object.assign({}, (gfMeta().specs)||{});
   let err='';
@@ -3638,7 +3638,7 @@ function renderGateFunding(){
     return;
   }
   if(meta.quoteErr) html+=`<p class="hint" style="color:var(--warning)">行情未更新：${esc(meta.quoteErr)}。价格仍是上次成功的公开价，不是新的实时价。</p>`;
-  if(legs.some(l=>gfHeldSize(l)>0 && !gfCloseByLeg(l.id))) html+=`<p class="hint">持仓浮盈亏和已累计资金费只显示在这张卡片上，不记入今日收益。记录平仓后才把价差、资金费和手续费合成一笔，记入平仓当天。</p>`;
+  if(legs.some(l=>gfHeldSize(l)>0 && !gfCloseByLeg(l.id))) html+=`<p class="hint">持仓浮盈亏只显示在这张卡片上，不记入今日收益。记录平仓后才把价差、资金费和手续费合成一笔，记入平仓当天。</p>`;
   if(sum.missing) html+=`<p class="hint">还有 ${sum.missing} 笔资金费没有标记价，未计入。可在该行手填。</p>`;
   const dup={};
   legs.forEach(l=>{ if(gfSizeAt(l, now)>0) dup[l.contract]=(dup[l.contract]||0)+1; });
@@ -3664,26 +3664,16 @@ function renderGateFunding(){
     const mine=rows.filter(r=>r.legId===leg.id).sort((a,b)=>b.t-a.t);
     const flat=!held || closed;
     let pnlNum=null, pnlLabel='未实现价差';
-    if(closeView&&closeView.priced){ pnlNum=closeView.gross; pnlLabel='已实现价差'; }
+    if(closeView&&closeView.priced){ pnlNum=closeView.gross+(closeView.funding||0); pnlLabel='已实现价差'; }
     else if(flat){ pnlLabel='已实现价差缺失'; }
     else if(!entry){ pnlLabel='缺开仓价'; }
     else if(upnl!=null){ pnlNum=upnl; }
     html+=`<div class="item"><div class="item-top"><div><div class="item-name">${esc(leg.contract)} <span class="badge">${leg.side==='short'?'做空':'做多'}</span></div>
       <div class="item-meta">${closed?'已记录平仓':(held>0?'持仓中':'数量为 0')} · ${esc(gfFmtQty(held))} 张${quanto?(' · '+esc(gfFmtQty(base))+' 币'):''}</div></div>
       <div class="item-r"><div class="item-pnl ${pnlNum==null?'':(pnlNum>=0?'up':'down')}">${pnlNum==null?'--':gfFmtU(pnlNum)}</div><div class="item-meta">${esc(pnlLabel)}</div></div></div>`;
-    if(closeView&&closeView.priced) html+=`<div class="item-meta">净盈亏 ${esc(gfFmtU(closeView.net))}（价差 + 资金费 + 手续费，已入账一次）${closeView.rate?(' · 锁定汇率 '+esc(fmtRate(closeView.rate))):''}</div>`;
-    else if(flat) html+=`<p class="hint" style="color:var(--warning)">没有已记录的平仓价，不用当前标记价代替成交价。</p>`;
+    if(flat&&!(closeView&&closeView.priced)) html+=`<p class="hint" style="color:var(--warning)">没有已记录的平仓价，不用当前标记价代替成交价。</p>`;
     if(!entry) html+=`<p class="hint" style="color:var(--warning)">补充开仓价后才会计入价差盈亏。不会根据行情猜开仓价。</p>`;
-    html+=`<div class="item-meta">开仓价 ${entry?esc(gfFmtPx(entry)):'未填'} · 标记价 ${mark?esc(gfFmtPx(mark)):(meta.quoteErr?'行情中断':'未取得')}</div>`;
-    html+=`<div class="item-meta">名义 ${notional==null?'--':esc(gfFmtAbsU(notional))} · 保证金 ${margin==null?'未填杠杆':esc(gfFmtAbsU(margin))}${leg.leverage>0?(' · 杠杆 '+esc(gfFmtQty(leg.leverage))+'x（只影响保证金）'):''}</div>`;
-    html+=`<div class="item-meta">当前资金费率 ${spec.upcoming==null?'--':esc(gfFmtRate(spec.upcoming))} · 下次结算 ${spec.next?esc(gfShTime(spec.next))+' 北京时间':'--'}</div>`;
-    html+=`<div class="item-meta">预计下一期 ${nextPay==null?'--':esc(gfFmtU(nextPay))}（按当前名义估算，不是已结算）</div>`;
-    html+=`<div class="item-meta">已累计资金费 ${esc(gfFmtU(fund.sum))}${fund.missing?(' · '+fund.missing+' 笔缺标记价未计入'):''} · 本仓手续费 ${esc(gfFmtU(feeSum))}</div>`;
-    ch.forEach((c,i)=>{
-      html+=`<div class="item-meta">${esc(gfChangeLabel(c,i))} ${esc(gfTime(c.t))} · ${esc(gfSizeText(c))}
-        <button type="button" class="btn-sm" onclick="gfOpenChange('${leg.id}','${c.id}')">改</button>
-        <button type="button" class="btn-sm dan" onclick="gfDeleteChange('${leg.id}','${c.id}')">删</button></div>`;
-    });
+    html+=`<div class="item-meta">开仓价 ${entry?esc(gfFmtPx(entry)):'未填'}${closeView&&closeView.exit?(' · 平仓价 '+esc(gfFmtPx(closeView.exit))):''}</div>`;
     html+=`<div class="btn-row">
       ${closed?`<button type="button" class="btn-sm pri" onclick="gfOpenClose('${leg.id}')">改正平仓</button>`:(entry&&held>0?`<button type="button" class="btn-sm pri" onclick="gfOpenClose('${leg.id}')">记录平仓</button>`:'')}
       ${!entry?`<button type="button" class="btn-sm warn" onclick="gfOpenLeg('${leg.id}')">补充开仓价</button>`:`<button type="button" class="btn-sm" onclick="gfOpenLeg('${leg.id}')">编辑</button>`}
@@ -4016,6 +4006,8 @@ function gfSelfCheck(){
   eq(closeSeen.gross, (623.54-entry)*2.26, 'gross from exit not mark');
   if(Math.abs(closeSeen.gross-(markNow-entry)*2.26)<1e-6) errs.push('used live mark as exit');
   eq(closeSeen.rate, 6.6813, 'fx frozen');
+  eq(closeSeen.funding, -1.8784, 'funding exposed for display');
+  eq(closeSeen.gross+closeSeen.funding, (623.54-entry)*2.26-1.8784, 'realized spread nets funding');
   eq(closeSeen.net, closeSeen.gross+(-1.8784)+(-0.2), 'net includes fees');
   const bare={id:'Q0', entryPrice:entry};
   eq(gfCloseView(bare), null, 'no close no invent');
