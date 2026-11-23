@@ -401,12 +401,12 @@
     <div class="home-grid">
     <div class="hero">
       <div class="sum-l">净资产（资产 − 待还）</div>
-      <div class="sum-v" id="netWorth">¥0.00</div>
+      <div class="sum-v" id="netWorth">加载中</div>
       <div class="hero-grid">
-        <div><div class="sum-l">总资产</div><div class="sum-v sm" id="totalAssets">¥0</div></div>
-        <div><div class="sum-l">待还债务</div><div class="sum-v sm" id="totalDebt">¥0</div></div>
-        <div><div class="sum-l">今日投资盈亏</div><div class="sum-v sm" id="todayPnl">--</div></div>
-        <div><div class="sum-l">投资累计盈亏</div><div class="sum-v sm" id="investPnl">--</div></div>
+        <div><div class="sum-l">总资产</div><div class="sum-v sm" id="totalAssets">加载中</div></div>
+        <div><div class="sum-l">待还债务</div><div class="sum-v sm" id="totalDebt">加载中</div></div>
+        <div><div class="sum-l">今日投资盈亏</div><div class="sum-v sm" id="todayPnl">加载中</div></div>
+        <div><div class="sum-l">投资累计盈亏</div><div class="sum-v sm" id="investPnl">加载中</div></div>
       </div>
       <div id="heroMix"></div>
     </div>
@@ -416,7 +416,7 @@
         <div id="goalRing"></div>
         <div class="goal-sub" id="goalSub">累计收益相对目标的进度</div>
       </div>
-      <div class="goal-amt" id="goalAmt">¥0</div>
+      <div class="goal-amt" id="goalAmt">加载中</div>
       <div class="ms" id="goalMs"></div>
       <div class="goal-set">
         <button type="button" class="pill" id="goalAuto" onclick="setGoalAuto()">自动</button>
@@ -502,7 +502,6 @@
             <button type="button" class="btn-sm" id="gfRefreshBtn" onclick="gfRefresh()">同步资金费</button>
           </span>
         </div>
-        <p class="hint" style="margin:0 0 8px">USDT 永续，只读公开行情。未平仓名义不计入总资产。持仓浮盈亏不记入今日收益。点「记录平仓」后，价差、资金费和手续费合成一笔净盈亏，记入平仓当天，只记一次，也不会向交易所下单。</p>
         <div id="gateBody"></div>
       </div>
     </div>
@@ -918,7 +917,16 @@ const STOCK_DB = [
   {c:'005273',n:'华商可转债债券A',t:'fund',cur:'CNY'},{c:'161725',n:'招商中证白酒',t:'fund',cur:'CNY'},{c:'110022',n:'易方达消费行业',t:'fund',cur:'CNY'}
 ];
 
-function load(){ try{ const r=localStorage.getItem(SK); if(r) S={...S,...JSON.parse(r)}; }catch(e){}
+let storeState='empty';
+function load(){
+  let raw=null;
+  try{ raw=localStorage.getItem(SK); }
+  catch(e){ storeState='error'; }
+  if(storeState!=='error'){
+    if(raw){ try{ S={...S,...JSON.parse(raw)}; storeState='ready'; }catch(e){ storeState='error'; } }
+    else storeState='empty';
+  }
+  if(storeState==='error') return;
   // migrate invest board
   try{
     const old=localStorage.getItem('invest_pnl_v3')||localStorage.getItem('invest_pnl_v2');
@@ -969,7 +977,17 @@ function recalcPos(p){
   }
   p.trades=tr; p.qty=qty; p.cost=qty?r(ct/qty):(+p.cost||0); p.realizedPnl=r(real);
 }
-function save(){ localStorage.setItem(SK, JSON.stringify(S)); }
+function save(){ if(storeState==='error') return; localStorage.setItem(SK, JSON.stringify(S)); }
+function syncTokenPresent(){ try{ return !!(localStorage.getItem('am_sync_token')||'').trim(); }catch(e){ return false; } }
+function booksPresent(){
+  const g=S.gateFunding||[];
+  return (S.accounts||[]).length||(S.positions||[]).length||(S.ledger||[]).length||(S.debts||[]).length||(S.history||[]).length||(S.transfers||[]).length||g.some(x=>x&&(x.kind==='leg'||x.kind==='close'||x.kind==='fee'));
+}
+function paintHomeHold(msg){
+  ['netWorth','totalAssets','totalDebt','todayPnl','investPnl','goalAmt'].forEach(id=>{ const el=document.getElementById(id); if(!el) return; el._n=null; el.textContent=msg; });
+  const w=document.getElementById('weekBox'); if(w) w.textContent=msg;
+  const d=document.getElementById('dayContrib'); if(d) d.innerHTML='<div class="empty">'+esc(msg)+'</div>';
+}
 function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,6); }
 function today(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 function fmt(n,d=2){ if(n==null||isNaN(n)) return '--'; return Number(n).toLocaleString('zh-CN',{minimumFractionDigits:d,maximumFractionDigits:d}); }
@@ -3436,6 +3454,12 @@ function gfLegFees(leg){
 }
 function gfCloses(){ return gfEnsure().filter(x=>x && x.kind==='close' && x.id); }
 function gfCloseByLeg(legId){ return gfCloses().find(c=>c.legId===legId)||null; }
+function gfCloseView(leg){
+  const rec=leg&&gfCloseByLeg(leg.id);
+  if(!rec) return null;
+  const priced=+rec.exitPrice>0 && rec.grossUSDT!=null && isFinite(+rec.grossUSDT);
+  return {priced, gross:priced?+rec.grossUSDT:null, net:(rec.netUSDT!=null&&isFinite(+rec.netUSDT))?+rec.netUSDT:null, rate:+rec.rateUSDT>0?+rec.rateUSDT:null, pnlCNY:(rec.pnlCNY!=null&&isFinite(+rec.pnlCNY))?+rec.pnlCNY:null};
+}
 // 当日收益只认已记录的平仓净额（价差 + 资金费 + 手续费，一笔）。持仓浮盈亏、未平仓资金费行都不进这里。
 function gfDayMap(){
   const m={};
@@ -3602,7 +3626,6 @@ function renderGateFunding(){
   let html='';
   if(gfStatusText) html+=`<p class="hint">${esc(gfStatusText)}</p>`;
   if(meta.error) html+=`<p class="hint" style="color:var(--warning)">上次刷新失败，仍用上次保存的估算：${esc(meta.error)}</p>`;
-  if(meta.at && !gfStatusText) html+=`<p class="last-u">估算更新于 ${esc(rateTimeStr(meta.at))}</p>`;
   const seenG={};
   (meta.gaps||[]).forEach(g=>{
     const k=g.contract+'|'+(g.openAt||'')+'|'+(g.oldest||'')+'|'+(g.empty?1:0);
@@ -3614,11 +3637,7 @@ function renderGateFunding(){
     el.innerHTML=html+'<div class="empty">还没有合约仓位。点「记开仓」填写合约、方向、开仓价、数量和杠杆。</div>';
     return;
   }
-  const qErr=meta.quoteErr?`<p class="hint" style="color:var(--warning)">行情未更新：${esc(meta.quoteErr)}。价格仍是上次成功的公开价，不是新的实时价。</p>`:'';
-  const qAt=meta.quoteAt?`<p class="last-u">公开行情 ${esc(gfShTime(meta.quoteAt/1000))}（北京时间）</p>`:'<p class="last-u">打开本页后拉取公开标记价，约 12 秒一次；离开页面会暂停。</p>';
-  html+=qErr+qAt;
-  const todayNet=gfTodayCNY();
-  if(todayNet!=null) html+=`<p class="hint">今日已记入收益的合约平仓 ${fmtP(todayNet)} 元。这是价差、资金费和手续费合成的一笔，日历里同一笔不会再加一次。</p>`;
+  if(meta.quoteErr) html+=`<p class="hint" style="color:var(--warning)">行情未更新：${esc(meta.quoteErr)}。价格仍是上次成功的公开价，不是新的实时价。</p>`;
   if(legs.some(l=>gfHeldSize(l)>0 && !gfCloseByLeg(l.id))) html+=`<p class="hint">持仓浮盈亏和已累计资金费只显示在这张卡片上，不记入今日收益。记录平仓后才把价差、资金费和手续费合成一笔，记入平仓当天。</p>`;
   if(sum.missing) html+=`<p class="hint">还有 ${sum.missing} 笔资金费没有标记价，未计入。可在该行手填。</p>`;
   const dup={};
@@ -3637,14 +3656,23 @@ function renderGateFunding(){
     const notional=mark&&base?mark*base:(entry&&base?entry*base:null);
     const margin=gfMarginOf(notional, leg.leverage);
     const closed=!!gfCloseByLeg(leg.id);
+    const closeView=gfCloseView(leg);
     const upnl=(!closed&&entry&&mark&&base)?gfPricePnl(leg.side, entry, mark, base):null;
     const fund=gfLegFunding(leg);
     const feeSum=gfLegFees(leg);
     const nextPay=(!closed&&mark&&held&&quanto&&spec.upcoming!=null)?gfEstimate(leg.side, mark, held, quanto, spec.upcoming):null;
     const mine=rows.filter(r=>r.legId===leg.id).sort((a,b)=>b.t-a.t);
+    const flat=!held || closed;
+    let pnlNum=null, pnlLabel='未实现价差';
+    if(closeView&&closeView.priced){ pnlNum=closeView.gross; pnlLabel='已实现价差'; }
+    else if(flat){ pnlLabel='已实现价差缺失'; }
+    else if(!entry){ pnlLabel='缺开仓价'; }
+    else if(upnl!=null){ pnlNum=upnl; }
     html+=`<div class="item"><div class="item-top"><div><div class="item-name">${esc(leg.contract)} <span class="badge">${leg.side==='short'?'做空':'做多'}</span></div>
       <div class="item-meta">${closed?'已记录平仓':(held>0?'持仓中':'数量为 0')} · ${esc(gfFmtQty(held))} 张${quanto?(' · '+esc(gfFmtQty(base))+' 币'):''}</div></div>
-      <div class="item-r"><div class="item-pnl ${upnl==null?'':(upnl>=0?'up':'down')}">${upnl==null?'--':gfFmtU(upnl)}</div><div class="item-meta">${entry?'未实现价差':'缺开仓价'}</div></div></div>`;
+      <div class="item-r"><div class="item-pnl ${pnlNum==null?'':(pnlNum>=0?'up':'down')}">${pnlNum==null?'--':gfFmtU(pnlNum)}</div><div class="item-meta">${esc(pnlLabel)}</div></div></div>`;
+    if(closeView&&closeView.priced) html+=`<div class="item-meta">净盈亏 ${esc(gfFmtU(closeView.net))}（价差 + 资金费 + 手续费，已入账一次）${closeView.rate?(' · 锁定汇率 '+esc(fmtRate(closeView.rate))):''}</div>`;
+    else if(flat) html+=`<p class="hint" style="color:var(--warning)">没有已记录的平仓价，不用当前标记价代替成交价。</p>`;
     if(!entry) html+=`<p class="hint" style="color:var(--warning)">补充开仓价后才会计入价差盈亏。不会根据行情猜开仓价。</p>`;
     html+=`<div class="item-meta">开仓价 ${entry?esc(gfFmtPx(entry)):'未填'} · 标记价 ${mark?esc(gfFmtPx(mark)):(meta.quoteErr?'行情中断':'未取得')}</div>`;
     html+=`<div class="item-meta">名义 ${notional==null?'--':esc(gfFmtAbsU(notional))} · 保证金 ${margin==null?'未填杠杆':esc(gfFmtAbsU(margin))}${leg.leverage>0?(' · 杠杆 '+esc(gfFmtQty(leg.leverage))+'x（只影响保证金）'):''}</div>`;
@@ -3657,14 +3685,16 @@ function renderGateFunding(){
         <button type="button" class="btn-sm dan" onclick="gfDeleteChange('${leg.id}','${c.id}')">删</button></div>`;
     });
     html+=`<div class="btn-row">
-      ${entry&&held>0?`<button type="button" class="btn-sm pri" onclick="gfOpenClose('${leg.id}')">记录平仓</button>`:''}
+      ${closed?`<button type="button" class="btn-sm pri" onclick="gfOpenClose('${leg.id}')">改正平仓</button>`:(entry&&held>0?`<button type="button" class="btn-sm pri" onclick="gfOpenClose('${leg.id}')">记录平仓</button>`:'')}
       ${!entry?`<button type="button" class="btn-sm warn" onclick="gfOpenLeg('${leg.id}')">补充开仓价</button>`:`<button type="button" class="btn-sm" onclick="gfOpenLeg('${leg.id}')">编辑</button>`}
       <button type="button" class="btn-sm" onclick="gfOpenChange('${leg.id}')">改数量</button>
       <button type="button" class="btn-sm" onclick="gfOpenFee('','${leg.id}')">记手续费</button>
       ${closed?`<button type="button" class="btn-sm dan" onclick="gfDeleteClose('${leg.id}')">撤销平仓</button>`:''}
       <button type="button" class="btn-sm dan" onclick="gfDeleteLeg('${leg.id}')">删除</button>
     </div>`;
-    const shown=gfMore[leg.id]?mine:mine.slice(0, GF_SHOW);
+    const fundOpen=!flat || !!gfMore['c:'+leg.id];
+    if(flat) html+=`<button type="button" class="more-btn" onclick="gfToggleMore('c:${leg.id}')">${fundOpen?'收起资金费结算':('展开资金费结算（'+mine.length+'）')}</button>`;
+    const shown=flat?(fundOpen?mine:[]):(gfMore[leg.id]?mine:mine.slice(0, GF_SHOW));
     shown.forEach(row=>{
       const used=gfHasActual(row)?'手工实际':(row.estimated!=null && isFinite(+row.estimated)?'估计':'缺标记价');
       const title=gfHasActual(row)?'手工实际':(row.estimated!=null?GF_EST_LABEL:'');
@@ -3682,7 +3712,7 @@ function renderGateFunding(){
           ${(row.near||row.excluded)?`<button type="button" class="btn-sm ${row.excluded?'':'warn'}" onclick="gfToggleRow('${row.id}')">${row.excluded?'计入这笔':'这笔不计入'}</button>`:''}
         </div></div>`;
     });
-    if(mine.length>GF_SHOW) html+=`<button type="button" class="more-btn" onclick="gfToggleMore('${leg.id}')">${gfMore[leg.id]?'收起更早结算':('展开更早结算（'+(mine.length-GF_SHOW)+'）')}</button>`;
+    if(!flat && mine.length>GF_SHOW) html+=`<button type="button" class="more-btn" onclick="gfToggleMore('${leg.id}')">${gfMore[leg.id]?'收起更早结算':('展开更早结算（'+(mine.length-GF_SHOW)+'）')}</button>`;
     html+='</div>';
   });
   html+=`<div class="card-t" style="padding-bottom:0">交易手续费</div>`;
@@ -3978,10 +4008,34 @@ function gfSelfCheck(){
     S.gateFunding=JSON.parse(snapDay);
     S.rates=JSON.parse(snapRates);
   }
+  const snapH=JSON.stringify(S.gateFunding||[]);
+  const markNow=652.67, entry=648.72;
+  S.gateFunding=[{kind:'leg', id:'QZ', contract:'QQQ_USDT', side:'long', entryPrice:entry, leverage:2, changes:[{id:'o', t:1, size:226, quanto:0.01}]}, {kind:'close', id:'close:QZ', legId:'QZ', exitPrice:623.54, grossUSDT:(623.54-entry)*2.26, fundingUSDT:-1.8784, feesUSDT:-0.2, netUSDT:(623.54-entry)*2.26-1.8784-0.2, rateUSDT:6.6813, pnlCNY:roundMoney(((623.54-entry)*2.26-1.8784-0.2)*6.6813)}];
+  const closeSeen=gfCloseView(S.gateFunding[0]);
+  eq(closeSeen.priced, true, 'close priced');
+  eq(closeSeen.gross, (623.54-entry)*2.26, 'gross from exit not mark');
+  if(Math.abs(closeSeen.gross-(markNow-entry)*2.26)<1e-6) errs.push('used live mark as exit');
+  eq(closeSeen.rate, 6.6813, 'fx frozen');
+  eq(closeSeen.net, closeSeen.gross+(-1.8784)+(-0.2), 'net includes fees');
+  const bare={id:'Q0', entryPrice:entry};
+  eq(gfCloseView(bare), null, 'no close no invent');
+  const a={p:{id:'1', name:'英伟达', type:'stock', symbolNorm:'usNVDA', currency:'USD'}, h:{real:10, buyAmt:100, realCNY:70, pct:10, firstBuy:'2026-11-10'}};
+  const b={p:{id:'2', name:'英伟达', type:'stock', symbolNorm:'usNVDA', currency:'USD'}, h:{real:-20, buyAmt:80, realCNY:-140, pct:-25, firstBuy:'2026-11-12'}};
+  const c={p:{id:'3', name:'英伟达', type:'stock', symbolNorm:'usNVDA', currency:'HKD'}, h:{real:5, buyAmt:50, realCNY:4, pct:10, firstBuy:'2026-11-01'}};
+  const gs=histGroups([b,a,c]);
+  eq(gs.length, 2, 'currency not merged');
+  const usd=gs.find(g=>g.currency==='USD');
+  eq(usd.items.length, 2, 'same symbol grouped');
+  eq(usd.pct, (10-20)/(100+80)*100, 'pct not summed');
+  eq(usd.realCNY, 70-140, 'cny summed once');
+  S.gateFunding=JSON.parse(snapH);
   return errs;
 }
 
 function renderAll(){
+  if(storeState==='error'){ paintHomeHold('本机账本读不出来，已停止保存'); return; }
+  if(!booksPresent() && syncTokenPresent() && !window.__amSyncSettled){ paintHomeHold('正在读取已保存的账本'); return; }
+  if(!booksPresent() && syncTokenPresent() && window.__amSyncFailed){ paintHomeHold('没有读到已保存的账本，未改写成 0'); return; }
   const inv=investValue(), debt=debtValue();
   const mix=assetTotals();
   const assets=mix.assets;
@@ -4135,6 +4189,24 @@ function histStats(p){
   const pct=buyAmt?real/buyAmt*100:null;
   return {buyQ,buyAmt,sellQ,sellAmt,avgBuy,avgSell,firstBuy,lastSell,real,pct,realCNY:toCNY(real,p.currency)};
 }
+let histOpen={};
+function toggleHistGroup(i){ histOpen[i]=!histOpen[i]; renderInvest(); }
+function histGroups(list){
+  const order=[], map={};
+  (list||[]).forEach(item=>{
+    const p=item.p||{};
+    const sym=String(p.symbolNorm||p.symbol||'').trim().toLowerCase();
+    const key=[p.type||'', sym, p.currency||'CNY'].join('|');
+    if(!map[key]){ map[key]={key, name:p.name, symbol:p.symbolNorm||p.symbol, type:p.type, currency:p.currency||'CNY', items:[]}; order.push(map[key]); }
+    map[key].items.push(item);
+  });
+  return order.map(g=>{
+    let real=0, buyAmt=0, realCNY=0;
+    g.items.forEach(it=>{ real+=+it.h.real||0; buyAmt+=+it.h.buyAmt||0; realCNY+=+it.h.realCNY||0; });
+    g.items.sort((a,b)=>String((a.h&&a.h.firstBuy)||'').localeCompare(String((b.h&&b.h.firstBuy)||'')));
+    return Object.assign(g, {real, buyAmt, realCNY, pct:buyAmt?real/buyAmt*100:null});
+  }).sort((a,b)=>b.realCNY-a.realCNY);
+}
 function renderInvest(){
   renderInvestCash();
   const q=(document.getElementById('posQ')?.value||'').toLowerCase();
@@ -4174,29 +4246,33 @@ function renderInvest(){
     }).join('');
   }
   let hist=S.positions.filter(p=>(+p.qty||0)<=1e-10 && match(p)).map(p=>({p,h:histStats(p)}));
-  hist.sort((a,b)=>b.h.realCNY-a.h.realCNY);
-  const hc=document.getElementById('histCnt'); if(hc) hc.textContent=hist.length+' 个';
+  const groups=histGroups(hist);
+  const hc=document.getElementById('histCnt'); if(hc) hc.textContent=groups.length+' 个';
   const hl=document.getElementById('histList');
   if(hl){
-    if(!hist.length) hl.innerHTML='<div class="empty">清仓后的股票/基金/加密会出现在这里</div>';
-    else hl.innerHTML=hist.map(({p,h})=>`<div class="item">
-      <div class="item-top">
-        <div><div class="item-name">${esc(p.name)}</div>
-          <div class="item-meta"><span class="badge ${p.type}">${typeLabel(p.type)}</span> ${esc(p.symbolNorm||p.symbol||'')}</div>
+    if(!groups.length) hl.innerHTML='<div class="empty">清仓后的股票/基金/加密会出现在这里</div>';
+    else hl.innerHTML=groups.map((g,i)=>{
+      const open=!!histOpen[i];
+      const rounds=g.items.map(({p,h})=>`<div class="item">
+        <div class="item-meta">${esc(p.name)} · 买入 ${fmt(h.buyQ,4)} · 均价 ${fmt(h.avgBuy,4)} · ${esc(h.firstBuy||'-')}${h.sellQ?` → 卖出 ${fmt(h.sellQ,4)} · 均价 ${fmt(h.avgSell,4)} · ${esc(h.lastSell||'-')}`:''}</div>
+        <div class="item-meta">本轮 ${fmtP(h.realCNY)}${h.pct!=null?(' · '+((h.pct>=0?'+':'')+fmt(h.pct,2)+'%')):''}</div>
+        ${tradeHist(p)}
+        <div class="btn-row"><button class="btn-sm" onclick="editPos('${p.id}')">编辑</button><button class="btn-sm dan" onclick="delPos('${p.id}')">删除</button></div>
+      </div>`).join('');
+      return `<div class="item">
+        <div class="item-top">
+          <div><div class="item-name">${esc(g.name||g.symbol)}</div>
+            <div class="item-meta"><span class="badge ${g.type}">${typeLabel(g.type)}</span> ${esc(g.symbol||'')} · ${g.items.length} 轮</div>
+          </div>
+          <div class="item-r">
+            <div class="item-pnl ${g.realCNY>=0?'up':'down'}">${fmtP(g.realCNY)}</div>
+            <div class="item-meta">${g.pct!=null?(g.pct>=0?'+':'')+fmt(g.pct,2)+'%':''}</div>
+          </div>
         </div>
-        <div class="item-r">
-          <div class="item-pnl ${h.realCNY>=0?'up':'down'}">${fmtP(h.realCNY)}</div>
-          <div class="item-meta">${h.pct!=null?(h.pct>=0?'+':'')+fmt(h.pct,2)+'%':''}</div>
-        </div>
-      </div>
-      <div class="item-meta">买入 ${fmt(h.buyQ,4)} · 均价 ${fmt(h.avgBuy,4)} · ${esc(h.firstBuy||'-')}
-        ${h.sellQ?` → 卖出 ${fmt(h.sellQ,4)} · 均价 ${fmt(h.avgSell,4)} · ${esc(h.lastSell||'-')}`:''}</div>
-      <div class="btn-row">
-        <button class="btn-sm" onclick="editPos('${p.id}')">编辑</button>
-        <button class="btn-sm dan" onclick="delPos('${p.id}')">删除</button>
-      </div>
-      ${tradeHist(p)}
-    </div>`).join('');
+        <button type="button" class="more-btn" onclick="toggleHistGroup(${i})">${open?'收起交易记录':'展开交易记录'}</button>
+        ${open?rounds:''}
+      </div>`;
+    }).join('');
   }
   const dl=document.getElementById('dcaList');
   if(!S.dca.length) dl.innerHTML='<div class="empty">暂无定投计划</div>';
@@ -4946,6 +5022,8 @@ document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>swit
 
 window.__am={classifyLocal,pickSuggest,parseHint,mapHit,confirmAsset,buildBookEvents,goalTargetOf,weekBounds,MILESTONES,isCnFundCode,fallbackGuess,confirmSix,isInvestAcc,idleCash,assetTotals,convertAmt,migrateInvestCash,fxCalcPnL,fxSummaryFromPayload,fxReadLocalSummary,normQuoteDate,sessionDateOf,marketKind,gfSelfCheck,raw:()=>S};
 load();
+window.__amSyncSettled=!syncTokenPresent();
+window.AMAfterSync=function(){ window.__amSyncSettled=true; renderAll(); };
 handleUrlAdd();
 document.getElementById('ledDate').value=today();
 renderAll();

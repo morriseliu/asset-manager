@@ -1,6 +1,6 @@
 // 全能资产管家 service worker: app shell cache-first, price/rate APIs network-only.
 const PREFIX = 'asset-manager-';
-const CACHE = PREFIX + 'v24'; // v24：已结算资金费会补记到持仓；浮盈亏仍不进当日收益
+const CACHE = PREFIX + 'v25'; // v25：平仓显示已实现价差，首页加载中不再伪装成 0
 const CHART_JS = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js';
 const SHELL = [
   './',
