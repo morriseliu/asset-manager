@@ -178,9 +178,12 @@
     return Promise.resolve().then(fn).catch(function (e) {
       var msg = (e && e.message) || String(e);
       if (/Failed to fetch|NetworkError|Load failed/i.test(msg)) msg = '网络不可用，稍后自动重试';
+      window.__amSyncFailed = true;
       status('同步失败：' + msg, true);
     }).then(function () {
       busy = false;
+      window.__amSyncSettled = true;
+      try { if (window.AMAfterSync) window.AMAfterSync(); } catch (e) {}
       if (pending) { pending = false; schedulePush(200); }
     });
   }
@@ -192,6 +195,7 @@
         var l = num(K.localTs), last = num(K.lastTs), dirty = l > last;
         if (!res.remote) return push(null);
         var r = +res.remote.updatedAt || 0;
+        if (!hasData(snapshot()) && hasData(res.remote.data)) return applyRemote(res.remote);
         // 本机从未同步且没有实际数据 → 直接下载
         if (!last && !hasData(snapshot())) return applyRemote(res.remote);
         // 首次在本机连接：两边都有数据时让用户选
