@@ -752,6 +752,7 @@
       <div class="form-g"><label>成本价</label><input class="form-c" id="pCost" type="number" step="any" required></div>
     </div>
     <div class="form-g"><label>现价（可空）</label><input class="form-c" id="pPrice" type="number" step="any"></div>
+    <div class="form-g"><label>手续费（可空）</label><input class="form-c" id="pFee" type="number" step="any" placeholder="0"></div>
     <div class="form-g" id="pCutoffRow" style="display:none"><label>买入时间（15:00 为界，仅基金）</label>
       <div style="display:flex;gap:8px">
         <button type="button" class="btn-sm pri" id="pCutoffBefore" onclick="setCutoff('pos',false)">15:00 前买入</button>
@@ -4700,10 +4701,10 @@ function fillPosAcc(selId, lock){
   sel.disabled=!!lock;
 }
 function openPosModal(){ document.getElementById('posId').value=''; document.getElementById('posTitle').textContent='添加持仓';
-  ['pName','pSymbol','pQty','pCost','pPrice','pPlat'].forEach(id=>document.getElementById(id).value='');
+  ['pName','pSymbol','pQty','pCost','pPrice','pFee','pPlat'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('pType').value='stock'; ensureCurOption('CNY'); document.getElementById('pReal').value='0';
   posCutoff=isAfterCutoffNow();
-  ['pQty','pCost'].forEach(i=>{ const e=document.getElementById(i); e.disabled=false; e.title=''; });
+  ['pQty','pCost','pFee'].forEach(i=>{ const e=document.getElementById(i); e.disabled=false; e.title=''; });
   resetDetect(); fillPosAcc('', false); openM('posModal'); syncCutoffUI(); }
 function editPos(id){ const p=S.positions.find(x=>x.id===id); if(!p)return;
   document.getElementById('posId').value=id; document.getElementById('posTitle').textContent='编辑持仓';
@@ -4718,7 +4719,8 @@ function editPos(id){ const p=S.positions.find(x=>x.id===id); if(!p)return;
   detManual=true; nameAuto=false; curManual=!!p.currencyLock; posOrigSymbol=p.symbol||''; currentDet=null;
   paintChip({type:p.type||'stock',currency:cur,name:p.name,confidence:'saved'});
   ensureTrades(p); const lock=p.trades.length>1;
-  ['pQty','pCost'].forEach(i=>{ const e=document.getElementById(i); e.disabled=lock; e.title=lock?'已有加仓/减仓记录，请在交易记录里修改':''; });
+  document.getElementById('pFee').value=(p.trades[0]&&p.trades[0].fee)||'';
+  ['pQty','pCost','pFee'].forEach(i=>{ const e=document.getElementById(i); e.disabled=lock; e.title=lock?'已有加仓/减仓记录，请在交易记录里修改':''; });
   fillPosAcc(p.accId||'', lock); openM('posModal'); syncCutoffUI(); }
 let posSaving=false;
 async function savePos(){
@@ -4747,6 +4749,7 @@ async function savePos(){
     currency, currencyLock:!!curManual, platform:document.getElementById('pPlat').value.trim(),
     realizedPnl:+document.getElementById('pReal').value||0
   };
+  const fee=+document.getElementById('pFee').value||0;
   const accSel=document.getElementById('pAcc'), accRow=document.getElementById('pAccRow');
   if(accSel&&accRow&&accRow.style.display!=='none'&&accSel.value) data.accId=accSel.value;
   if(!data.name||!data.symbol) return toast('请填名称和代码');
@@ -4760,9 +4763,10 @@ async function savePos(){
         const base=o.trades[0];
         const reopen=!!(base&&base.settled&&(
           Math.abs((+o.qty||0)-(+data.qty||0))>1e-8 || Math.abs((+o.cost||0)-(+data.cost||0))>1e-8 ||
+          Math.abs((+base.fee||0)-fee)>1e-8 ||
           (o.currency||'CNY')!==(data.currency||'CNY') || (!!data.accId&&data.accId!==o.accId)));
         if(reopen) reverseTradeCash(o, base);
-        o.trades[0].qty=data.qty; o.trades[0].price=data.cost;
+        o.trades[0].qty=data.qty; o.trades[0].price=data.cost; o.trades[0].fee=fee;
         if(data.accId) o.accId=data.accId;
         if(reopen) base.settled=false;
       }
@@ -4779,7 +4783,7 @@ async function savePos(){
     // 底仓日期用今天，避免「今日盈亏」误用昨收
     np._tradeDate=today();
     ensureTrades(np);
-    np.trades[0].date=today();
+    np.trades[0].date=today(); np.trades[0].fee=fee;
     if(np.type==='fund') np.trades[0].afterCutoff=posCutoff; // 基金按 15:00 规则记生效日
     const left=settleTradeCash(np, np.trades[0]);
     if(left!=null&&left<-0.005) warn='，闲钱已为负 '+money(left, accCurrency(resolvedInvestAcc(np)));

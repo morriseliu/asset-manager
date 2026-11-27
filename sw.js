@@ -1,6 +1,6 @@
 // 全能资产管家 service worker: app shell cache-first, price/rate APIs network-only.
 const PREFIX = 'asset-manager-';
-const CACHE = PREFIX + 'v26'; // v26：合约卡片只保留开仓价/平仓价与资金费结算展开
+const CACHE = PREFIX + 'v27'; // v27：添加持仓支持手续费（底仓交易 fee）
 const CHART_JS = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js';
 const SHELL = [
   './',
