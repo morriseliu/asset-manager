@@ -451,6 +451,10 @@
   </div>
 
   <div id="p-invest" style="display:none">
+    <div class="card" id="cumPnlCard">
+      <div class="card-t"><span>累计盈亏</span><span class="sub">持仓含浮动盈亏 · 合约只计已平仓</span></div>
+      <div id="cumPnlBox"></div>
+    </div>
     <div class="subtabs" id="investTabs">
       <button type="button" class="subtab on" data-inv="hold" onclick="setInvestSub('hold')">持仓</button>
       <button type="button" class="subtab" data-inv="perp" onclick="setInvestSub('perp')">合约</button>
@@ -2295,6 +2299,22 @@ function moneyCard(o){
     ${pair?`<div class="money-pair">${pair}</div>`:''}
     ${o.extra||''}
   </div>`;
+}
+/** 投资页顶部累计：持仓（股票/基金/加密货币，浮动+已实现）与合约（只计已平仓净额），均为人民币。 */
+function investCumSplit(){
+  let spot=0;
+  for(const p of S.positions){
+    if(p.type!=='stock'&&p.type!=='fund'&&p.type!=='crypto') continue;
+    if((+p.qty||0)<=1e-10){ spot+=toCNY(+p.realizedPnl||0,p.currency); continue; }
+    spot+=calcPos(p).cumulativeCNY;
+  }
+  return {spot, gf:gfCumCNY()};
+}
+function renderCumPnl(){
+  const box=document.getElementById('cumPnlBox'); if(!box) return;
+  const {spot, gf}=investCumSplit();
+  const cell=(l,v)=>`<div><div class="l">${l}</div><div class="v ${v>=0?'up':'down'}">${v>=0?'+¥':'-¥'}${fmt(Math.abs(v))}</div></div>`;
+  box.innerHTML=`<div class="money-pair">${cell('股票 · 基金 · 加密货币',spot)}${cell('合约',gf)}</div>`;
 }
 function renderInvestCash(){
   const box=document.getElementById('investCashBox'); if(!box) return;
@@ -4201,6 +4221,7 @@ function histGroups(list){
   }).sort((a,b)=>b.realCNY-a.realCNY);
 }
 function renderInvest(){
+  renderCumPnl();
   renderInvestCash();
   const q=(document.getElementById('posQ')?.value||'').toLowerCase();
   const ft=document.getElementById('posType')?.value||'';
