@@ -424,6 +424,12 @@
         <button type="button" class="btn-sm" onclick="setGoalCustom()">设定</button>
       </div>
     </div>
+    <div class="card span2" id="mileCard">
+      <div class="card-t"><span>历程</span><span class="sub">成就历史 · 每天自动记一次</span></div>
+      <div id="mileTop"></div>
+      <div id="mileBox"></div>
+      <div class="hint" id="mileFoot" style="margin-top:8px"></div>
+    </div>
     <div class="card">
       <div class="card-t"><span>本周小结</span><span class="sub" id="weekRange"></span></div>
       <div class="week" id="weekBox"></div>
@@ -1409,9 +1415,73 @@ function goalTargetOf(cum){
   const n=MILESTONES.find(m=>m.v>cum);
   return {value:n?n.v:MILESTONES[MILESTONES.length-1].v,auto:true};
 }
+/** 历程：每天记一次目标口径累计收益（持仓浮动+已实现+合约已平仓，不含外汇），当日随行情更新、次日冻结。 */
+function captureMileLog(cum){
+  if(!isFinite(+cum)) return;
+  if(!Array.isArray(S.mileLog)) S.mileLog=[];
+  if(!Array.isArray(S.mileMarks)) S.mileMarks=[{tier:500,first:'2026-10-10',source:'user'}];
+  const d=today(), v=roundMoney(+cum);
+  const last=S.mileLog[S.mileLog.length-1];
+  if(last&&last.date===d){ if(Math.abs((+last.cum||0)-v)>0.005){ last.cum=v; save(); } return; }
+  if(last&&last.date>d) return;
+  S.mileLog.push({date:d,cum:v});
+  if(S.mileLog.length>1200) S.mileLog=S.mileLog.slice(-1200);
+  save();
+}
+function mileStats(){
+  const log=(Array.isArray(S.mileLog)?S.mileLog.slice():[]).sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+  const marks={}; (Array.isArray(S.mileMarks)?S.mileMarks:[]).forEach(m=>{ if(m&&isFinite(+m.tier)&&m.first) marks[+m.tier]=String(m.first); });
+  const cur=log.length?+log[log.length-1].cum||0:null;
+  return MILESTONES.map(m=>{
+    let first=marks[m.v]||null, last=null, dips=0, above=false;
+    for(const e of log){
+      const ok=(+e.cum||0)>=m.v;
+      if(ok){ if(!first||String(e.date)<first) first=String(e.date); last=String(e.date); }
+      if(above&&!ok) dips++;
+      above=ok;
+    }
+    return {v:m.v,l:m.l,first,last,dips,reached:!!first,current:cur!=null&&cur>=m.v};
+  });
+}
+function firstTradeDate(){
+  let d=null;
+  const take=s=>{ if(s&&(!d||String(s)<d)) d=String(s); };
+  (S.positions||[]).forEach(p=>{(p.trades||[]).forEach(t=>take(t&&t.date));});
+  (S.gateFunding||[]).forEach(x=>{
+    if(!x) return;
+    if(x.kind==='close') take(x.date);
+    if(x.kind==='leg') (x.changes||[]).forEach(c=>{ if(c&&c.t) take(gfShDate(c.t)); });
+  });
+  return d;
+}
+function renderMile(cum){
+  const box=document.getElementById('mileBox'); if(!box) return;
+  const d0=firstTradeDate();
+  const top=document.getElementById('mileTop');
+  if(top){
+    if(!d0) top.innerHTML='<div class="goal-sub">还没有交易记录，记下第一笔交易后开始算入市天数。</div>';
+    else{
+      const days=Math.max(1,Math.round((Date.parse(today()+'T00:00:00')-Date.parse(d0+'T00:00:00'))/86400000)+1);
+      top.innerHTML=`<div class="item"><div class="item-top"><div class="item-name">入市天数</div><div class="item-pnl">第 ${days} 天</div></div><div class="hint">首笔交易 ${d0} · 按持仓与合约记录</div></div>`;
+    }
+  }
+  box.innerHTML=mileStats().map(r=>{
+    let st, cls, hint;
+    if(!r.reached){ st='未达成'; cls=''; hint='还没到 · 当前累计 '+fmtSignedYuan(cum); }
+    else if(r.current){ st='已达成'; cls='up'; hint='首次 '+r.first+(r.last?' · 最近 '+r.last:'')+(r.dips?' · 回撤 '+r.dips+' 次':''); }
+    else{ st='回撤中'; cls='down'; hint='首次 '+r.first+(r.last?' · 上次达到 '+r.last:' · 尚未在记录中再次达到')+(r.dips?' · 回撤 '+r.dips+' 次':''); }
+    return `<div class="item"><div class="item-top"><div class="item-name">¥${r.l}</div><div class="item-pnl ${cls}">${st}</div></div><div class="hint">${hint}</div></div>`;
+  }).join('');
+  const foot=document.getElementById('mileFoot');
+  if(foot){
+    const log=Array.isArray(S.mileLog)?S.mileLog:[];
+    foot.textContent=(log.length?'自 '+log[0].date+' 起每日自动记录当日累计收益，当日随行情更新、次日冻结。':'从今天起每日自动记录。')+'2026-10-10 首次达到 ¥500 由你确认记入。';
+  }
+}
 function renderGoal(){
   const ring=document.getElementById('goalRing'); if(!ring) return;
   const cum=investValue().cum+gfCumCNY();
+  captureMileLog(cum);
   const tgt=goalTargetOf(cum);
   const pct=tgt.value>0?Math.max(0,Math.min(100,cum<=0?0:cum/tgt.value*100)):0;
   const shown=Math.round(pct);
@@ -1436,6 +1506,7 @@ function renderGoal(){
   }).join('');
   const autoBtn=document.getElementById('goalAuto'); if(autoBtn) autoBtn.classList.toggle('on',tgt.auto);
   renderWeek(cum);
+  renderMile(cum);
 }
 function setGoalAmount(v){ S.goalTarget=+v; save(); renderGoal(); }
 function setGoalAuto(){ S.goalTarget=null; const input=document.getElementById('goalInput'); if(input) input.value=''; save(); renderGoal(); }

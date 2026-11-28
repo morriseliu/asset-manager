@@ -1,6 +1,6 @@
 // 全能资产管家 service worker: app shell cache-first, price/rate APIs network-only.
 const PREFIX = 'asset-manager-';
-const CACHE = PREFIX + 'v28'; // v28：投资页顶部累计盈亏（持仓三类 + 合约已平仓）
+const CACHE = PREFIX + 'v29'; // v29：今日页新增「历程」分区（入市天数 + 9 档里程碑时间线，每日自动记录）
 const CHART_JS = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js';
 const SHELL = [
   './',
